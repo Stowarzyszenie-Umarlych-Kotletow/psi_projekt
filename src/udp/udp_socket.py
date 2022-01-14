@@ -4,8 +4,8 @@ import sys
 from threading import Thread
 from typing import Tuple, Callable
 
-from utils import all_ip4_addresses
-from const import *
+from common.utils import all_ip4_addresses
+from common.config import *
 
 
 class UdpSocket:

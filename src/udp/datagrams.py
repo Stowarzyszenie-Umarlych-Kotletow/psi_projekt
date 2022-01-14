@@ -1,7 +1,7 @@
 # STRUCTS
 from abc import abstractmethod
 
-from const import *
+from common.config import *
 from udp.structs import MessageType, HereStruct, HelloStruct, HeaderStruct, FileDataStruct, \
     InvalidHeaderException, Struct
 

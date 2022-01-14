@@ -2,7 +2,7 @@
 import struct
 from abc import abstractmethod
 
-from const import *
+from common.config import *
 from udp.message_type import MessageType
 
 
