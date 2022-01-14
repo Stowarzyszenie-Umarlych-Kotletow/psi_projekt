@@ -1,4 +1,5 @@
 import hashlib
+import re
 
 from netifaces import interfaces, ifaddresses, AF_INET
 
@@ -30,3 +31,7 @@ def all_ip4_broadcasts():
                 if 'broadcast' in link.keys():
                     ip_list.append(link['broadcast'])
     return ip_list
+
+
+def is_sha256(hash_string: str) -> bool:
+    return bool(re.match("^[a-fA-F0-9]{64}$", hash_string))

@@ -1,7 +1,8 @@
 from cmd import Cmd
 from typing import List
 
-from controller import FoundResponse
+from udp.found_response import FoundResponse
+
 
 def parse_peers(peers: dict):
     index = 0
@@ -22,7 +23,7 @@ def parse_status(status_data: List):
     def parse_status_msg(file):
         tmp_str = ""
         if file['status'] == 'd':
-            tmp_str += f"downloading from {file['from']} ({file['progress']*100}%)"
+            tmp_str += f"downloading from {file['from']} ({file['progress'] * 100}%)"
         if file['status'] == 'u':
             tmp_str += f"uploading to {file['client_count']} clients"
         if file['status'] == 'h':
@@ -56,6 +57,7 @@ def parse_responses(responses: dict):
         if index != arr_size:
             return_str += "\n"
     return return_str
+
 
 example_status_data = [
     {
@@ -113,9 +115,10 @@ class SimpleShell(Cmd):
         """display program status."""
         print(parse_status(example_status_data))
 
-    def do_find(self, inp):
+    def do_search(self, inp):
+        """search for files in the network"""
         print("Searching... please wait")
-        responses = self.controller.find(inp, None)
+        responses = self.controller.search_file(inp)
         if len(responses.keys()) == 0:
             print("No files were found in the network")
             return
