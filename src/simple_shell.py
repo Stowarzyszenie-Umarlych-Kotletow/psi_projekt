@@ -2,6 +2,7 @@ from cmd import Cmd
 from typing import List
 
 from udp.found_response import FoundResponse
+from const import MAX_FILENAME_LENGTH
 
 
 def parse_peers(peers: dict):
@@ -21,21 +22,27 @@ def parse_peers(peers: dict):
 
 def parse_status(status_data: List):
     def parse_status_msg(file):
-        tmp_str = ""
+        msg = ""
+        progress = ""
         if file['status'] == 'd':
-            tmp_str += f"downloading from {file['from']} ({file['progress'] * 100}%)"
+            msg = f"downloading from {file['from']}"
+            progress = f"{int(file['progress'] * 100)}%"
         if file['status'] == 'u':
-            tmp_str += f"uploading to {file['client_count']} clients"
+            msg = f"uploading to {file['client_count']} clients"
         if file['status'] == 'h':
-            tmp_str += f"hosting"
-        return tmp_str
+            msg = "hosting"
+        return (msg, progress)
 
     index = 0
     return_str = ""
     arr_size = len(status_data)
     for file in status_data:
-        status_msg = parse_status_msg(file)
-        return_str += f"{index}: \tname: {file['name']} fingerprint: {file['fingerprint']} status: " + status_msg
+        status_msg, status_progress = parse_status_msg(file)
+        return_str += f"{str(index):{''}>5}  | \
+{file['name']:{MAX_FILENAME_LENGTH}} | \
+{file['fingerprint']}     | \
+{status_msg:33} | \
+{f'{status_progress}'.rjust(8)}"
         index += 1
         if index != arr_size:
             return_str += "\n"
@@ -44,15 +51,17 @@ def parse_status(status_data: List):
 
 def parse_responses(responses: dict):
     index = 0
-    return_str = "Files found in the network:\n"
+    return_str = ""
     arr_size = len(responses.keys())
-    for key in responses:
-        response: FoundResponse = responses[key]
+    for key,response in responses.items():
         file_hash = response.get_hash()
-        fingerprint = file_hash[0:16]
+        fingerprint = str(file_hash[0:16])
         file_name = response.get_name()
         provider_ip = response.get_provider_ip()
-        return_str += f"{index}: \tname: \"{file_name}\" fingerprint: \"{fingerprint}\" from {provider_ip}"
+        return_str += f"{str(index):{''}>5}  | \
+{file_name:{MAX_FILENAME_LENGTH}} | \
+{fingerprint:{16}} | \
+{provider_ip}"
         index += 1
         if index != arr_size:
             return_str += "\n"
@@ -61,7 +70,7 @@ def parse_responses(responses: dict):
 
 example_status_data = [
     {
-        "name": "Przygody koziołka.avi",
+        "name": "Przygody koziołka.avi1111111111",
         "fingerprint": "49ba7b56",
         "status": "d",  # todo enum
         "progress": 0.05,
@@ -113,7 +122,10 @@ class SimpleShell(Cmd):
 
     def do_status(self, inp):
         """display program status."""
+        print("="*102)
+        print("index".ljust(7) + "| " + "name".ljust(32) + "| " + "fingerprint".ljust(13) + "| " + "status".ljust(34) + "| " + "progress")
         print(parse_status(example_status_data))
+        print("="*102)
 
     def do_search(self, inp):
         """search for files in the network"""
@@ -122,6 +134,10 @@ class SimpleShell(Cmd):
         if len(responses.keys()) == 0:
             print("No files were found in the network")
             return
+        print("="*77)
+        print("Files found in the network:\n")
+        print("index".ljust(7) + "| " + "name".ljust(32) + "| " + "fingerprint".ljust(17) + "| " + "from")
         print(parse_responses(responses))
+        print("="*77)
         provider_id = input("Select provider: ")
         print(f"TODO IN TCP {provider_id}")
