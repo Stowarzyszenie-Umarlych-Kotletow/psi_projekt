@@ -1,24 +1,33 @@
 from dataclasses import dataclass
+from enum import Enum
 
 
-@dataclass
+class FileStatus(str, Enum):
+    READY = "ready"
+    DOWNLOADING = "downloading"
+    SHARING = "sharing"
+
+
 class FileMetadata:
     name: str
     path: str
-    hash: str
+    digest: str
     size: int
-    status: str
+    status: FileStatus
 
-    def __init__(self, data=None):
+    def __init__(self, data: dict = None):
         if data is not None:
             for key, value in data.items():
-                setattr(self, key, value)
+                if key == "status":
+                    self.status = FileStatus[value.upper()]
+                else:
+                    setattr(self, key, value)
 
     def as_dict(self):
         return dict(
             name=self.name,
             path=self.path,
-            hash=self.hash,
+            digest=self.digest,
             size=self.size,
-            status=self.status,
+            status=self.status.value,
         )
