@@ -1,7 +1,7 @@
-from src.controller import Controller
-
+from controller import Controller
+from simple_shell import SimpleShell
 
 if __name__ == "__main__":
     controller = Controller()
     controller.start()
-    input()
+    SimpleShell(controller).cmdloop()
