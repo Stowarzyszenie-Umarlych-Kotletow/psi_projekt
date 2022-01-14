@@ -1,0 +1,10 @@
+aiofile==3.7.4
+black==21.12b0
+caio==0.9.3
+click==8.0.3
+mypy-extensions==0.4.3
+netifaces==0.11.0
+pathspec==0.9.0
+platformdirs==2.4.1
+tomli==1.2.3
+typing_extensions==4.0.1

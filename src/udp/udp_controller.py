@@ -7,7 +7,7 @@ from udp.datagrams import HelloDatagram, HereDatagram, FindDatagram, FoundDatagr
 from udp.found_response import FoundResponse
 from udp.structs import FileDataStruct
 from udp.udp_socket import *
-from utils import sha256sum
+from common.utils import sha256sum
 
 
 class InvalidSearchArgsException(Exception):

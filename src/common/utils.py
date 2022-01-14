@@ -2,8 +2,7 @@ import hashlib
 import re
 
 from netifaces import interfaces, ifaddresses, AF_INET
-
-from const import *
+from common.config import *
 
 
 def sha256sum(data):

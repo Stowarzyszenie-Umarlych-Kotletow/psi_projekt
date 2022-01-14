@@ -2,7 +2,7 @@ from cmd import Cmd
 from typing import List
 
 from udp.found_response import FoundResponse
-from const import MAX_FILENAME_LENGTH
+from common.config import MAX_FILENAME_LENGTH
 
 
 def parse_peers(peers: dict):

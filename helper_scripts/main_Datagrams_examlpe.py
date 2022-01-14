@@ -1,5 +1,5 @@
-from src.controller import Controller
-from src.simple_shell import SimpleShell
+from main.controller import Controller
+from main.simple_shell import SimpleShell
 from src.udp.datagrams import *
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import os
 # Unicast and broadcast ports are the same in the whole network
 # BROADCAST_IP must be set the same in the whole network
 # if you experience problems with
@@ -20,3 +21,6 @@ ENCODING = 'utf-8'
 MAGIC_NUMBER = 0xd16d
 UDP_BUFFER_SIZE = 1024
 MAX_FILENAME_LENGTH = 31
+
+DIGEST_ALG = 'sha256'
+MOCK_CONTROLLER_PATH = os.getcwd()
