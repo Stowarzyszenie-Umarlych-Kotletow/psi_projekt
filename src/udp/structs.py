@@ -132,7 +132,7 @@ class HereStruct(Struct):
 class FileDataStruct(Struct):
     FORMAT = f"!{str(MAX_FILENAME_LENGTH + 1)}p64s"  # first byte of name contains size of string
 
-    def __init__(self, file_name, file_hash):
+    def __init__(self, file_name, file_hash, file_size:int=0):
         super().__init__()
         if type(file_name) == str:
             file_name = bytes(file_name, ENCODING)
@@ -142,6 +142,7 @@ class FileDataStruct(Struct):
             raise TypeError("Invalid file_name or file_hash type")
         self._file_name: bytes = file_name
         self._file_hash: bytes = file_hash
+        self._file_size: int = file_size
 
     def get_file_hash_encoded(self) -> bytes:
         return self._file_hash
@@ -157,6 +158,9 @@ class FileDataStruct(Struct):
 
     def hash_is_empty(self):
         return self.get_file_hash_encoded()[0] == 0
+
+    def get_file_size(self):
+        return self._file_size
 
     def name_is_empty(self):
         return len(self.get_file_name()) == 0
