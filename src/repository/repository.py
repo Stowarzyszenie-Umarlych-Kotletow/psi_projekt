@@ -91,7 +91,15 @@ class Repository(metaclass=Singleton):
                 )
 
             data = self.__update_metadata(
-                FileMetadata(name=filename, path=path, status=FileStatus.READY)
+                FileMetadata(
+                    dict(
+                        name=filename,
+                        path=path,
+                        status=FileStatus.READY,
+                        digest=None,
+                        size=0,
+                    )
+                )
             )
             self._files[filename] = data
             self.__persist_filedata(data)
