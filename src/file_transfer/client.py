@@ -45,25 +45,26 @@ class ClientHandler:
             file_offset = 0
         
         content_length = response.headers.content_length
-        open(file.path, 'a').close()
-        with open(file.path, 'rb+') as raw_file:
-            async with async_open(raw_file) as writer:
-                writer.seek(file_offset)
-                while file_offset < content_length and not context.should_stop:
-                    to_write = content_length - file_offset
-                    read_bytes = await reader.read(min(self.chunk_size, to_write))
-                    num_read_bytes = len(read_bytes)
-                    if num_read_bytes == 0:
-                        break
-                    file_offset += num_read_bytes
-                    await writer.write(read_bytes)
-                    context.update(file_offset)
-                raw_file.truncate(file_offset)
-                if file_offset < content_length:
-                    print(
-                        f"Expected {content_length} bytes, got {file_offset}"
-                    )
-                    raise ProtoError(ProtoStatusCode.C500_SERVER_ERROR)
+        open(file.path, 'a').close() # create if it doesn't exist
+        async with async_open(file.path, 'rb+') as writer:
+            writer.seek(file_offset)
+            while file_offset < content_length and not context.should_stop:
+                to_write = content_length - file_offset
+                read_bytes = await reader.read(min(self.chunk_size, to_write))
+                num_read_bytes = len(read_bytes)
+                if num_read_bytes == 0:
+                    break
+                file_offset += num_read_bytes
+                await writer.write(read_bytes)
+                context.update(file_offset)
+            file.path.truncate(file_offset)
+            if file_offset < content_length:
+                # TODO: replace with logger?
+                # TODO: make and raise an exception for invalid download
+                print(
+                    f"Expected {content_length} bytes, got {file_offset}"
+                )
+                raise ProtoError(ProtoStatusCode.C500_SERVER_ERROR)
 
     async def handle_connection(self, reader: StreamReader, writer: StreamWriter):
         log_extra = dict(id=self._id, method="GET", urn=self._context.file.name)
