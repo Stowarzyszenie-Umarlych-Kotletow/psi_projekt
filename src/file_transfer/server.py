@@ -10,44 +10,18 @@ from file_transfer.exceptions import InvalidRangeError, ParseError, UnsupportedE
 from file_transfer.models import (
     ByteRange,
     DigestContainer,
-    FileProvider,
     FileResponse,
     Request,
     Response,
 )
+from file_transfer.context import FileConsumerContext
 from logging import Logger
 
-
-class FileConsumerContext(FileProvider):
-    def __init__(self, controller: Controller, file: FileInfo) -> None:
-        self.controller = controller
-        self._file = file
-        self._should_stop = False
-
-    @property
-    def should_stop(self):
-        return self._should_stop
-
-    @property
-    def file(self) -> FileInfo:
-        return self._file
-
-    def stop(self):
-        self._should_stop = True
-
-    def __enter__(self):
-        self.controller.add_consumer(self)
-        return self
-
-    def __exit__(self, exc_type, exc_value, tb):
-        self.controller.remove_consumer(self)
-
-
-class ClientHandler:
+class ServerHandler:
     def __init__(self, controller: Controller) -> None:
         self._controller = controller
         self._id = uuid4()
-        self._logger = logging.getLogger("ClientHandler")
+        self._logger = logging.getLogger("ServerHandler")
 
     def new_consumer(self, file: FileInfo) -> FileConsumerContext:
         return FileConsumerContext(self._controller, file)

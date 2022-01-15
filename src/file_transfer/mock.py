@@ -1,8 +1,10 @@
 import os
+from typing import Optional
 
 
 class FileInfo:
-    def __init__(self, path: str, size: int, digest: str) -> None:
+    def __init__(self, name: str, path: str, size: int, digest: str) -> None:
+        self.name = name
         self.path = path
         self.size = size
         self.digest = digest
@@ -12,14 +14,23 @@ class Controller:
     def __init__(self, directory) -> None:
         self.directory = directory
 
-    def find_file(self, urn) -> FileInfo:
-        path = os.path.join(self.directory, urn)
+    def find_file(self, name) -> FileInfo:
+        path = os.path.join(self.directory, name)
         stat = os.stat(path)
         digest = "123"
-        return FileInfo(path, stat.st_size, digest)
+        return FileInfo(name, path, stat.st_size, digest)
 
     def add_consumer(self, context):
         pass
 
     def remove_consumer(self, context):
+        pass
+
+    def add_provider(self, context):
+        pass
+
+    def remove_provider(self, context, exc: Optional[Exception]):
+        pass
+
+    def provider_update(self, context, bytes_downloaded: int):
         pass

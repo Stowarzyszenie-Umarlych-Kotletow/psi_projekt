@@ -23,6 +23,10 @@ logging.config.dictConfig({
         'ClientHandler': {
             'level': 'DEBUG',
             'handlers': ['request-console']
+        },
+        'ServerHandler': {
+            'level': 'DEBUG',
+            'handlers': ['request-console']
         }
     }
 

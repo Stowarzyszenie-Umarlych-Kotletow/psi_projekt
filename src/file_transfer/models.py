@@ -161,7 +161,7 @@ class Response:
             await writer.drain()
 
     def assert_ok(self):
-        if not self.status_code.is_success:
+        if not ProtoStatusCode.is_success(self.status_code):
             raise ProtoError(self.status_code)
 
     @staticmethod
@@ -171,11 +171,13 @@ class Response:
         response_line = process_line(
             await reader.readline(), encoding, "Invalid status line"
         )
-        (method, urn) = parse_request_line(response_line)
+        (status_code, status_text) = parse_response_line(response_line)
         headers = await HeadersContainer.read_from(reader)
-        response = Response(method=method, urn=urn, headers=headers)
+        response = Response(
+            status_code=status_code, status_text=status_text, headers=headers
+        )
 
-        content_stream = reader if response.content_length is not None else None
+        content_stream = reader if response.headers.content_length is not None else None
 
         return (response, content_stream)
 

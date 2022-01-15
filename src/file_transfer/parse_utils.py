@@ -70,7 +70,6 @@ def parse_request_line(line: str) -> Tuple[ProtoMethod, str]:
     if len(split) != 2:
         raise ParseError("Invalid request line")
     (method, url) = split
-    method = method.upper()
     if not ProtoMethod.is_valid(method):
         raise ParseError("Unknown method")
     return (ProtoMethod[method], url)

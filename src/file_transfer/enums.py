@@ -21,9 +21,9 @@ class ProtoStatusCode(int, Enum):
     C416_INVALID_RANGE = 416
     C500_SERVER_ERROR = 500
 
-    @property
-    def is_success(self) -> bool:
-        return 200 <= self.value <= 299
+    @classmethod
+    def is_success(cls, value: int) -> bool:
+        return 200 <= value <= 299
 
     def describe(self) -> str:
         return STATUS_DESCRIPTIONS.get(self.value, self.name)
@@ -62,11 +62,11 @@ class ProtoMethod(str, ValidatingEnum):
 
 class KnownHeader(str, ValidatingEnum):
     CONTENT_LENGTH = "content-length"
+    CONTENT_RANGE = "content-range"
     CONTENT_TYPE = "content-type"
     IF_DIGEST = "if-digest"
     DIGEST = "digest"
     RANGE = "range"
-    CONTENT_RANGE = "content-range"
 
     @classmethod
     def sanitize(cls, header: str) -> str:
