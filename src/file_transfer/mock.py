@@ -14,7 +14,7 @@ class Controller:
     def __init__(self, directory) -> None:
         self.directory = directory
 
-    def find_file(self, name) -> FileInfo:
+    def get_file(self, name) -> FileInfo:
         path = os.path.join(self.directory, name)
         stat = os.stat(path)
         digest = "123"

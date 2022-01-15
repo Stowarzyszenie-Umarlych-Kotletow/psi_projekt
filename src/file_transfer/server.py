@@ -36,7 +36,7 @@ class ServerHandler:
                 raise UnsupportedError(f"Unsupported range unit: '{unit}'")
             range = ByteRange.from_interval(start, end)
 
-        file = self._controller.find_file(request.urn)
+        file = self._controller.get_file(request.urn)
 
         if_digest = request.headers.if_digest
         if if_digest:

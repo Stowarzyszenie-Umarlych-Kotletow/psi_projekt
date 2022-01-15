@@ -10,6 +10,18 @@ import threading
 
 controller = Controller(MOCK_CONTROLLER_PATH)
 
+tasks_lock = threading.Lock()
+tasks = []
+
+def in_background(future: asyncio.Future):
+    def task_finished(own_future):
+        with tasks_lock:
+            tasks.remove(own_future)
+    with tasks_lock:
+        tasks.append(future)
+        future.add_done_callback(task_finished)
+    return future
+    
 
 async def handle_client(*args, **kwargs):
     handler = ServerHandler(controller)
@@ -38,6 +50,9 @@ def new_loop():
     t = threading.Thread(target=loop_worker, args=(loop,), daemon=True)
     t.start()
     return loop
+    
+
+
 
 async def main():
     server = await asyncio.start_server(handle_client, "0.0.0.0", 1337)
@@ -45,6 +60,6 @@ async def main():
         await server.serve_forever()
 
 #loop = new_loop()
-#a=asyncio.run_coroutine_threadsafe(download(FileInfo('wideo.mkv', '/home/powerofdark/wideo.mkv', 0, '123'), 0), loop)
+a=asyncio.run_coroutine_threadsafe(download(FileInfo('wideo.mkv', '/home/powerofdark/wideo.mkv', 0, '123'), 0), loop)
 #_=asyncio.run_coroutine_threadsafe(main(), loop)
 #sleep(100)
