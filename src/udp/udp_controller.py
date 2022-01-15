@@ -1,7 +1,11 @@
+import asyncio
 import copy
 import datetime
+import logging
 import threading
 import time
+from typing import Dict, List
+
 from file_transfer.exceptions import MessageError
 from repository.file_metadata import FileMetadata
 
@@ -21,6 +25,7 @@ class InvalidSearchArgsException(Exception):
 
 class UdpController:
     def __init__(self, controller):
+        self._logger = logging.getLogger("UdpController")
         self._broadcast_socket = BroadcastSocket()
         self._unicast_socket = UdpSocket()
         self._controller = controller
@@ -32,15 +37,7 @@ class UdpController:
         self.__known_peers = dict()
         self._known_peers_lock = threading.Lock()
 
-        # search phrase that tells you what is currently being searched for (only filename)
-        # (if not None, then it means we are collecting found/not found responses)
-        self.__search_target = None
-
-        # peers that not yet responded to find
-        self.__peers_not_responded = set()
-
-        # dict of keys (file_hash, provider_ip) and of values FoundResponse
-        self.__found_responses = dict()
+        self._search_results: Dict[str, List[FoundResponse]] = {}
 
         # common lock for searching, found_responses and peers_not_responded
         self._search_lock = threading.Lock()
@@ -63,6 +60,7 @@ class UdpController:
 
         # broadcast hello message
         self._broadcast_socket.send(HelloDatagram().to_bytes())
+        self._logger.info("Started UDP controller")
 
 
     def stop(self):
@@ -77,70 +75,92 @@ class UdpController:
     def get_peer(self, ip):
         return self.get_peers().get(ip)
 
-    def search(self, file_name: str = None, file_hash: str = None) -> dict:
+    async def search(self, file_name: str = None, file_digest: str = None) -> Dict[str, List[FoundResponse]]:
         if not file_name:
             raise InvalidSearchArgsException("Filename cannot be empty")
 
-        if file_hash is None:
-            file_hash = ""
+        if file_digest is None:
+            file_digest = ""
 
-        if file_hash != "" and len(file_hash) != 64:  # todo verify if it is legit sha256
+        if file_digest != "" and len(file_digest) != 64:  # todo verify if it is legit sha256
             raise InvalidSearchArgsException("File hash does not look like sha256sum")
 
         with self._search_lock:
-            self.__search_target = (file_name, file_hash)
-            self.__found_responses = dict()
-            self.__peers_not_responded = set(self.get_peers().keys())
+            if file_name in self._search_results:
+                self._logger.warning("Search | Attempted to search a file for which a search is already in progress")
+                raise MessageError(f"There is another search for '{file_name}' in progress")
+            self._search_results[file_name] = []
 
-        find_struct = FileDataStruct(file_name, file_hash)
+        peers_available = set(self.get_peers().keys())
+
+        def get_missing_peers():
+            peers_left = set(peers_available)
+            with self._search_lock:
+                for result in self._search_results[file_name]:
+                    peers_left.remove(result.provider_ip)
+            return peers_left
+
+        find_struct = FileDataStruct(file_name, file_digest)
         find_datagram = FindDatagram(find_struct)
-
         self._broadcast_socket.send(find_datagram.to_bytes())
 
         # find and found callbacks are now working
-        time.sleep(FINDING_TIME)
+        await asyncio.sleep(FINDING_TIME)
 
         # check if all known peers responded and retry if not
+        missing_peers = get_missing_peers()
         for retry in range(FINDING_RETRIES):
-            if len(self.__peers_not_responded) != 0:
+            if len(missing_peers) != 0:
+                self._logger.info("Search | %s peers did not respond, retrying search for file %s with digest %s (%s/%s)",
+                                  len(missing_peers), file_name, file_digest, retry+1, FINDING_RETRIES)
+                with self._search_lock:
+                    self._search_results[file_name].clear()
                 self._broadcast_socket.send(find_datagram.to_bytes())
-                time.sleep(FINDING_TIME)
+                await asyncio.sleep(FINDING_TIME)
 
         # delete peers that did not respond
-        with self._known_peers_lock:
-            for peer_ip in self.__peers_not_responded:
-                self.__known_peers.pop(peer_ip)
+        for peer_ip in missing_peers:
+            self._logger.info("Search | Deleting unresponsive peer %s", peer_ip)
+            self.remove_peer(peer_ip)
 
         # disable finding mode
         with self._search_lock:
-            self.__search_target = None
+            responses: List[FoundResponse] = self._search_results.pop(file_name)
 
-        return self.__found_responses
+
+        results_dict = dict()
+        for response in responses:
+            if response.is_found:
+                results_dict.setdefault(response.digest, []).append(response)
+        self._logger.info("Search | Found %s in %s out of %s peers", file_name,
+                          sum(len(list) for list in results_dict.items()), len(peers_available))
+        return results_dict
 
     # UDP BROADCAST RECEIVE CALLBACKS
 
     def hello_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
         received_hello_datagram = HelloDatagram.from_bytes(datagram_bytes)
-        if received_hello_datagram is not None:
-            if DEBUG:
-                print(f"Recieved hello datagram from {address[0]}:{address[1]}")
-            here_datagram = HereDatagram()
-            self._broadcast_socket.send(here_datagram.to_bytes())
+        if received_hello_datagram is None:
+            return
+        self._logger.debug("Hello | Discovering new peer %s", address[0])
+        here_datagram = HereDatagram()
+        self._broadcast_socket.send(here_datagram.to_bytes())
 
     def here_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
         received_here_datagram = HereDatagram.from_bytes(datagram_bytes)
 
-        if received_here_datagram is not None:
-            message = received_here_datagram.get_message()
-            if DEBUG:
-                print(f"Recieved here datagram from {address[0]}:{address[1]}")
-            with self._known_peers_lock:
-                self.__known_peers[address[0]] = {
-                    'ip': address[0],
-                    'last_updated': datetime.datetime.now(),
-                    'tcp_port': message.get_tcp_port(),
-                    'unicast_port': message.get_unicast_port()
-                }
+        if received_here_datagram is None:
+            return
+        message = received_here_datagram.get_message()
+        self._logger.debug("Here | Discovered peer %s with TCP port %s", address[0], address[1])
+
+        with self._known_peers_lock:
+            self.__known_peers[address[0]] = {
+                'ip': address[0],
+                'last_updated': datetime.datetime.now(),
+                'tcp_port': message.get_tcp_port(),
+                'unicast_port': message.get_unicast_port()
+            }
 
     def find_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
         # check if datagram is of type FindDatagram
@@ -155,35 +175,27 @@ class UdpController:
         if peer is None:
             return
 
-        if DEBUG:
-            print(f"Recieved find datagram from {address[0]}:{address[1]}")
+        self._logger.debug("Find | Received datagram from %s", address[0])
         response_datagram = None
         try:
-            file: FileMetadata = self._controller.get_file(find_struct.get_file_name())
-            target_digest = find_struct.get_file_hash()
+            file: FileMetadata = self._controller.get_file(find_struct.file_name)
+            target_digest = find_struct.file_digest
             if target_digest and file.digest != target_digest:
-                print("Hash mismatch")
+                self._logger.warning("Find | Asked for file %s with digest %.8s, but local is %.8s", target_digest, file.digest)
                 raise MessageError("Hash mismatch")
             response_datagram = FoundDatagram(FileDataStruct(file.name, file.digest, file.size))
+            self._logger.debug("Find | Sending positive reply for file %s with digest %.8s", file.name, file.digest)
         except Exception as ex:
             response_datagram = NotFoundDatagram(find_struct)
+            self._logger.debug("Find | Sending negative reply for file %s with digest %.8s", find_struct.file_name, find_struct.file_digest)
             pass
         
         unicast_port = peer['unicast_port']
         self._unicast_socket.send_to(response_datagram.to_bytes(), ip_address, unicast_port)
 
-    def get_search_target(self):
-        with self._search_lock:
-            search_target = copy.deepcopy(self.__search_target)
-            return search_target
-
     # UDP UNICAST RECEIVE CALLBACKS
 
     def found_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
-        # check if finding is active
-        if self.get_search_target() is None:
-            return
-
         # check if datagram is of type FoundDatagram
         received_found_datagram = FoundDatagram.from_bytes(datagram_bytes)
         if received_found_datagram is None:
@@ -195,39 +207,45 @@ class UdpController:
 
         # check if provider is in known peers
         if provider_ip not in self.get_peers():
+            self._logger.warning("Found | Received from unknown peer %s", provider_ip)
             return
 
         # create find_response
-        find_response = FoundResponse(received_found_datagram.get_message(), provider_ip)
+        find_response = FoundResponse(received_found_datagram.get_message(), provider_ip, True)
 
         # add provider to the set
         with self._search_lock:
-            if provider_ip in self.__peers_not_responded:
-                self.__peers_not_responded.remove(provider_ip)
-            self.__found_responses[(find_response.get_hash(), find_response.get_name())] = find_response
+            result_list = self._search_results.get(find_response.name)
+            if result_list is not None:
+                result_list.append(find_response)
+        self._logger.debug("Found | Found file %s with digest %.8s, peer %s", find_response.name, find_response.digest, provider_ip)
 
     def not_found_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
-        # check if finding is active
-        if self.__search_target is None:
-            return
-
         # check if datagram is of type FoundDatagram
         received_not_found_datagram = NotFoundDatagram.from_bytes(datagram_bytes)
         if received_not_found_datagram is None:
             return
 
-        # todo check if found response matches _finding (file hash and file name) (may be not necessary in not_found)
-
         provider_ip = address[0]
 
         # check if provider is in known peers
         if provider_ip not in self.get_peers():
+            self._logger.warning("NotFound | Received from unknown peer %s", provider_ip)
             return
+
+        # create find_response
+        find_response = FoundResponse(received_not_found_datagram.get_message(), provider_ip, False)
 
         # add provider to the set
         with self._search_lock:
-            if provider_ip in self.__peers_not_responded:
-                self.__peers_not_responded.remove(provider_ip)
+            result_list = self._search_results.get(find_response.name)
+            if result_list is not None:
+                result_list.append(find_response)
+        self._logger.debug("NotFound | Did not find file %s with digest %.8s, peer %s", provider_ip)
+
+    def remove_peer(self, peer_ip):
+        with self._known_peers_lock:
+            return self.__known_peers.pop(peer_ip)
 
     def _alive_agent(self):
         """
@@ -238,10 +256,12 @@ class UdpController:
         here_bytes = HereDatagram().to_bytes()
 
         while True:
+            self._logger.debug("Broadcasting HERE message")
             self._broadcast_socket.send(here_bytes)
             self._delete_old_peers()
             # todo check if the files are still in the filesystem
             time.sleep(10)
+
 
     def _delete_old_peers(self):
         """
@@ -253,4 +273,5 @@ class UdpController:
             for peer_ip in list(peers.keys()):
                 diff = now - peers[peer_ip]['last_updated']
                 if diff.total_seconds() > 30:
+                    self._logger.info("Removing peer %s because of inactivity", peer_ip)
                     peers.pop(peer_ip)  # delete peer from the list

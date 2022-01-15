@@ -1,0 +1,35 @@
+formatters:
+  request:
+    format: '%(asctime)s | %(name)s | %(id).8s | %(levelname)s | %(method)s %(urn)s:
+      %(message)s'
+  simple:
+    format: '%(asctime)s | %(name)s | %(levelname)s | %(message)s'
+handlers:
+  request-console:
+    class: logging.StreamHandler
+    formatter: request
+    level: DEBUG
+    stream: ext://sys.stdout
+  console:
+    class: logging.StreamHandler
+    formatter: simple
+    level: DEBUG
+    stream: ext://sys.stdout
+loggers:
+  ClientHandler:
+    handlers:
+    - request-console
+    level: DEBUG
+  ServerHandler:
+    handlers:
+    - request-console
+    level: DEBUG
+  UdpController:
+    handlers:
+    - console
+    level: DEBUG
+  Controller:
+    handlers:
+    - console
+    level: DEBUG
+version: 1

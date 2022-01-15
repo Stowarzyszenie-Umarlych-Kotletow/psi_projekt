@@ -144,28 +144,36 @@ class FileDataStruct(Struct):
         self._file_hash: bytes = file_hash
         self._file_size: int = file_size
 
-    def get_file_hash_encoded(self) -> bytes:
+
+    @property
+    def file_digest_encoded(self) -> bytes:
         return self._file_hash
 
-    def get_file_name_encoded(self) -> bytes:
+    @property
+    def file_name_encoded(self) -> bytes:
         return self._file_name
 
-    def get_file_hash(self) -> str:
-        if self.hash_is_empty():
+    @property
+    def file_digest(self) -> str:
+        if self.digest_is_empty:
             return None # TODO: BRO PLS FIX ME
         return str(self._file_hash, ENCODING)
 
-    def get_file_name(self) -> str:
+    @property
+    def file_name(self) -> str:
         return str(self._file_name, ENCODING)
 
-    def hash_is_empty(self):
-        return self.get_file_hash_encoded()[0] == 0
+    @property
+    def digest_is_empty(self):
+        return self.file_digest_encoded[0] == 0
 
-    def get_file_size(self):
+    @property
+    def file_size(self):
         return self._file_size
 
+    @property
     def name_is_empty(self):
-        return len(self.get_file_name()) == 0
+        return len(self.file_name) == 0
 
     def to_bytes(self):
         return struct.pack(self.FORMAT, self._file_name, self._file_hash)

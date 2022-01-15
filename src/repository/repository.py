@@ -78,10 +78,10 @@ class Repository:
                     os.remove(meta_path)
                     # TODO: think this through
                     continue
-                    raise LoadingRepositoryError("Is not a file")
-                if self.__calculate_hash(metadata.path) != metadata.digest:
-                    metadata = self.__update_metadata(metadata)
-                    self.__persist_filedata(metadata)
+
+
+                metadata = self.__update_metadata(metadata)
+                self.__persist_filedata(metadata)
 
                 self._files[metadata.name] = metadata
 
@@ -115,8 +115,8 @@ class Repository:
         with self._lock:
             if filename not in self._files.keys():
                 raise RepositoryModificationError("No such file in repository")
-            if self._files[filename].status == FileStatus.SHARING:
-                raise RepositoryModificationError("File currently being uploaded")
+            #if self._files[filename].status == FileStatus.SHARING:
+            #    raise RepositoryModificationError("File currently being uploaded")
             del self._files[filename]
             yaml_path = self._path + filename + ".yaml"
             if not os.path.exists(yaml_path):
@@ -147,6 +147,8 @@ class Repository:
 
     def init_meta(self, name, digest, size):
         # TODO: make file downloads separate
+        if name in self._files:
+            raise MessageError("File already exists")
         meta = FileMetadata(dict(name=name, digest=digest, size=size, path=os.path.join(self._path, name), status=FileStatus.DOWNLOADING))
         with self._lock:
             self.__update_metadata(meta)

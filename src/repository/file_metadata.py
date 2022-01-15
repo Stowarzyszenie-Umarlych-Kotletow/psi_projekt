@@ -5,7 +5,7 @@ from enum import Enum
 class FileStatus(str, Enum):
     READY = "ready"
     DOWNLOADING = "downloading"
-    SHARING = "sharing"
+    INVALID = "invalid"
 
 
 class FileMetadata:
@@ -37,3 +37,12 @@ class FileMetadata:
             current_size=self.current_size,
             current_digest=self.current_digest
         )
+
+    @property
+    def is_valid(self):
+        return self.size == self.current_size and self.digest == self.current_digest
+
+    @property
+    def can_share(self):
+        return self.status == FileStatus.READY and self.is_valid
+

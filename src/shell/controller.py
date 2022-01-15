@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import random
 import threading
 from typing import List, Optional, Tuple, Dict
 
@@ -43,6 +45,8 @@ class FileStateContext:
             self._provider = value
 
     def add_consumer(self, context):
+        if not self.file_meta.can_share:
+            raise NotFoundError("File is not accessible")
         self._consumers.append(context)
 
     def remove_consumer(self, context):
@@ -55,11 +59,17 @@ class Controller:
         self._state: Dict[str, FileStateContext] = {}
         self._repo = Repository()
         self._loop = new_loop()
+        self._lock = threading.Lock()
+        self._executor = ThreadPoolExecutor()
+        self._logger = logging.getLogger("Controller")
 
     def start(self):
         self._udp_controller.start()
         self._server_task: Future = asyncio.run_coroutine_threadsafe(
             self._serve_tcp(), self._loop
+        )
+        self._monitor_task: Future = asyncio.run_coroutine_threadsafe(
+            self._monitor_files(), self._loop
         )
         self._repo.load()
         self._load_from_repo()
@@ -71,6 +81,7 @@ class Controller:
 
     def _add_file(self, meta: FileMetadata):
         # TODO: Collisions
+        self._logger.debug("Adding file %s", meta.name)
         self._state[meta.name] = FileStateContext(meta)
 
     async def _handle_client(self, reader, writer):
@@ -79,29 +90,59 @@ class Controller:
 
     async def _download_from(self, file: FileMetadata, endpoint: Tuple[str, int]):
         try:
+            self._logger.info("Starting download of file %s from %s", file.name, endpoint[0])
             streams = await asyncio.open_connection(*endpoint)
             handler = ClientHandler(self, file, endpoint)
             await handler.handle_connection(*streams)
 
             await self._loop.run_in_executor(None, self._repo.update_stat, file.name)
             # TODO: update file
-            print(f"Download completed, digest={file.digest}, cur_digest={file.current_digest}")
+            self._logger.info("Download of %s completed", file.name)
+            if file.digest != file.current_digest or file.size != file.current_size:
+                raise MessageError("Invalid file download")
             await self._loop.run_in_executor(None, self._repo.change_state, file.name, 'READY')
-        except:
-            # TODO: handle errors
-            pass
+        except Exception as exc:
+            self._logger.warning("Download of %s failed", exc_info=exc)
+            self._udp_controller.remove_peer(endpoint[0])
 
     async def _serve_tcp(self):
         server = await asyncio.start_server(self._handle_client, "0.0.0.0", TCP_PORT)
         async with server:
             await server.serve_forever()
 
+    async def _monitor_files(self):
+        while True:
+            await asyncio.sleep(5)
+            with self._lock:
+                for file in self._state.values():
+                    meta = file.file_meta
+                    if meta.status == 'downloading' and not file.provider:
+                        if meta.current_size >= meta.size and meta.digest != meta.current_digest:
+                            self._logger.warning("Truncating download %s", meta.name)
+                            meta.current_size = 0
+                        in_background(asyncio.run_coroutine_threadsafe(self.retry_download(meta.name), self._loop))
+                    elif meta.status == 'ready' and not meta.is_valid:
+                        self._logger.warning("Invalidating file %s", meta.name)
+                        self._executor.submit(self._repo.change_state, meta.name, 'INVALID')
+
+
+    async def retry_download(self, name: str):
+        self._logger.info("Retrying file %s", name)
+        meta = self.get_file(name)
+        search_res = await self._udp_controller.search(meta.name, meta.digest)
+        responses = search_res.get(meta.digest, [])
+        if len(responses) == 0:
+            self._logger.warning("Cannot find hosts to resume file %s", name)
+            return
+        response = random.choice(search_res[meta.digest])
+        peer = self._udp_controller.get_peer(response.provider_ip)
+        peer_port = peer['tcp_port']
+        await self._download_from(meta, (response.provider_ip, peer_port))
+
     def schedule_download(self, name: str, digest: Optional[str], size: int, endpoint: Tuple[str, int]):
-        # TODO: check state
         meta = self._repo.init_meta(name, digest, size)
         self._add_file(meta)
         in_background(asyncio.run_coroutine_threadsafe(self._download_from(meta, endpoint), self._loop))
-        print("Download scheduled")
 
     def stop(self):
         self._udp_controller.stop()
@@ -113,8 +154,8 @@ class Controller:
     def get_peer(self, ip) -> "TODO":
         return self._udp_controller.get_peer(ip)
 
-    def search_file(self, file_name: str = None, file_hash: str = None) -> dict:
-        return self._udp_controller.search(file_name, file_hash)
+    async def search_file(self, file_name: str = None, file_hash: str = None) -> dict:
+        return await self._udp_controller.search(file_name, file_hash)
 
     def _get_file_state(self, name: str) -> FileStateContext:
         try:

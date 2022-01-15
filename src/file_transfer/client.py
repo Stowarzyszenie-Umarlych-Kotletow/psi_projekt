@@ -9,7 +9,7 @@ from asyncio.streams import StreamReader, StreamWriter
 from typing import *
 from file_transfer.enums import KnownHeader, ProtoMethod, ProtoStatusCode
 from file_transfer.exceptions import (
-    ProtoError,
+    ProtoError, MessageError,
 )
 from file_transfer.models import (
     HeadersContainer,
@@ -38,33 +38,32 @@ class ClientHandler:
         self, context: FileProviderContext, response: Response, reader: StreamReader
     ):
         file = context.file
+        content_length = response.headers.content_length
         content_range = response.headers.content_range
         if content_range:
-            (unit, file_offset, *_) = content_range
+            (unit, file_offset, file_until, content_length) = content_range
         else:
             file_offset = 0
-        
-        content_length = response.headers.content_length
+
         open(file.path, 'a').close() # create if it doesn't exist
-        async with async_open(file.path, 'rb+') as writer:
-            writer.seek(file_offset)
-            while file_offset < content_length and not context.should_stop:
-                to_write = content_length - file_offset
-                read_bytes = await reader.read(min(self.chunk_size, to_write))
-                num_read_bytes = len(read_bytes)
-                if num_read_bytes == 0:
-                    break
-                file_offset += num_read_bytes
-                await writer.write(read_bytes)
-                context.update(file_offset)
-            file.path.truncate(file_offset)
+        with open(file.path, 'rb+') as file_raw:
+            async with async_open(file_raw) as writer:
+                writer.seek(file_offset)
+                while file_offset < content_length and not context.should_stop:
+                    to_write = content_length - file_offset
+                    read_bytes = await reader.read(min(self.chunk_size, to_write))
+                    num_read_bytes = len(read_bytes)
+                    if num_read_bytes == 0:
+                        break
+                    file_offset += num_read_bytes
+                    await writer.write(read_bytes)
+                    context.update(file_offset)
+                file_raw.truncate(file_offset)
             if file_offset < content_length:
                 # TODO: replace with logger?
                 # TODO: make and raise an exception for invalid download
-                print(
-                    f"Expected {content_length} bytes, got {file_offset}"
-                )
-                raise ProtoError(ProtoStatusCode.C500_SERVER_ERROR)
+                raise MessageError(f"Expected {content_length} bytes, got {file_offset}")
+
 
     async def handle_connection(self, reader: StreamReader, writer: StreamWriter):
         log_extra = dict(id=self._id, method="GET", urn=self._context.file.name)
@@ -92,7 +91,7 @@ class ClientHandler:
                 await self.handle_content(context, response, content_reader)
                 return True
         except Exception as e:
-            self._logger.warn("Download error", exc_info=e, extra=log_extra)
+            self._logger.warning("Download error", exc_info=e, extra=log_extra)
             raise e
         finally:
             writer.close()
