@@ -1,5 +1,5 @@
-from main.controller import Controller
-from main.simple_shell import SimpleShell
+from shell.controller import Controller
+from shell.simple_shell import SimpleShell
 
 def run():
     controller = Controller()

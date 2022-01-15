@@ -1,4 +1,4 @@
-# STRUCTS
+    # STRUCTS
 from abc import abstractmethod
 
 from common.config import *

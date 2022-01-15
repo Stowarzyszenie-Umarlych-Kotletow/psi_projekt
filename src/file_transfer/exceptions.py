@@ -1,3 +1,6 @@
+from typing import Optional
+
+
 class ProtoError(Exception):
     def __init__(self, code: "ProtoStatusCode", fatal=True, *args: object) -> None:
         super().__init__(*args)
@@ -16,7 +19,7 @@ class InvalidRequestError(RuntimeError):
 
 
 class MessageError(Exception):
-    def __init__(self, msg: str, *args: object) -> None:
+    def __init__(self, msg: Optional[str] = None, *args: object) -> None:
         super().__init__(*args)
         self.msg = msg
 

@@ -23,23 +23,21 @@ from aiofile.utils import async_open
 
 class ClientHandler:
     def __init__(
-        self, controller: Controller, file: FileInfo, file_offset: int = 0
+        self, controller: Controller, file: FileInfo, endpoint: Optional[Tuple[str, int]]
     ) -> None:
         self._controller = controller
         self._id = uuid4()
         self._logger = logging.getLogger("ClientHandler")
-        self._context = self.new_provider(file)
-        self._file_offset = file_offset
+        self._context = self.new_provider(file, endpoint)
         self.chunk_size = 16*1024
 
-    def new_provider(self, file: FileInfo) -> FileProviderContext:
-        return FileProviderContext(self._controller, file)
+    def new_provider(self, file: FileInfo, endpoint) -> FileProviderContext:
+        return FileProviderContext(self._controller, file, endpoint)
 
     async def handle_content(
         self, context: FileProviderContext, response: Response, reader: StreamReader
     ):
         file = context.file
-        file_offset = self._file_offset
         content_range = response.headers.content_range
         if content_range:
             (unit, file_offset, *_) = content_range
@@ -68,14 +66,14 @@ class ClientHandler:
                     raise ProtoError(ProtoStatusCode.C500_SERVER_ERROR)
 
     async def handle_connection(self, reader: StreamReader, writer: StreamWriter):
-        file = self._context.file
-        file_offset = self._file_offset
-        log_extra = dict(id=self._id, method="GET", urn=file.name)
+        log_extra = dict(id=self._id, method="GET", urn=self._context.file.name)
         (ip, port) = writer.get_extra_info("peername")
         self._logger.debug("New connection to %s:%s", ip, port, extra=log_extra)
 
         try:
             with self._context as context:
+                file = context.file
+                file_offset = file.current_size
                 headers = HeadersContainer()
                 if file.digest:
                     headers[KnownHeader.IF_DIGEST] = f"{DIGEST_ALG}={file.digest}"
@@ -94,6 +92,7 @@ class ClientHandler:
                 return True
         except Exception as e:
             self._logger.warn("Download error", exc_info=e, extra=log_extra)
+            raise e
         finally:
             writer.close()
         return False

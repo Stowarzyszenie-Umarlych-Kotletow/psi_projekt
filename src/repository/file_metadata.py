@@ -9,11 +9,15 @@ class FileStatus(str, Enum):
 
 
 class FileMetadata:
+    # immutable
     name: str
-    path: str
     digest: str
     size: int
+    path: str
+    # mutable
     status: FileStatus
+    current_size: int
+    current_digest: str
 
     def __init__(self, data: dict = None):
         if data is not None:
@@ -30,4 +34,6 @@ class FileMetadata:
             digest=self.digest,
             size=self.size,
             status=self.status.value,
+            current_size=self.current_size,
+            current_digest=self.current_digest
         )

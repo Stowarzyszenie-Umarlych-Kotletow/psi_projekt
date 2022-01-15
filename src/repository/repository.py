@@ -5,6 +5,8 @@ import fcntl
 import tempfile
 
 from enum import Enum
+
+from file_transfer.exceptions import MessageError
 from .file_metadata import FileMetadata, FileStatus
 
 
@@ -20,23 +22,23 @@ class Singleton(type):
         return cls._instances[cls]
 
 
-class LoadingRepositoryError(Exception):
+class LoadingRepositoryError(MessageError):
     pass
 
 
-class HashingError(Exception):
+class HashingError(MessageError):
     pass
 
 
-class RepositoryModificationError(Exception):
+class RepositoryModificationError(MessageError):
     pass
 
 
-class NotFoundError(Exception):
+class NotFoundError(MessageError):
     pass
 
 
-class Repository(metaclass=Singleton):
+class Repository:
 
     _files: dict
     _path: str
@@ -44,7 +46,7 @@ class Repository(metaclass=Singleton):
 
     def __init__(self, config=None):
         if not config:
-            self._path = tempfile.gettempdir()
+            self._path = os.path.join(tempfile.gettempdir(), "files")
         else:
             self._path = config["path"]
         mode = 0o700
@@ -66,12 +68,16 @@ class Repository(metaclass=Singleton):
             ]
             for file in files:
                 metadata = None
-                with open(self._path + file, "r+") as f:
+                meta_path = os.path.join(self._path, file)
+                with open(meta_path, "r+") as f:
                     loaded = yaml.load(f, Loader=yaml.FullLoader)
                     loaded["status"] = loaded["status"].upper()
                     metadata = FileMetadata(loaded)
 
                 if not os.path.isfile(metadata.path):
+                    os.remove(meta_path)
+                    # TODO: think this through
+                    continue
                     raise LoadingRepositoryError("Is not a file")
                 if self.__calculate_hash(metadata.path) != metadata.digest:
                     metadata = self.__update_metadata(metadata)
@@ -79,7 +85,7 @@ class Repository(metaclass=Singleton):
 
                 self._files[metadata.name] = metadata
 
-    def add_file(self, path: str):
+    def add_file(self, path: str) -> FileMetadata:
         with self._lock:
             if not os.path.isfile(path):
                 raise RepositoryModificationError("Is not a file")
@@ -95,14 +101,15 @@ class Repository(metaclass=Singleton):
                     dict(
                         name=filename,
                         path=path,
-                        status=FileStatus.READY,
-                        digest=None,
-                        size=0,
+                        status=FileStatus.READY
                     )
                 )
             )
+            data.digest = data.current_digest
+            data.size = data.current_size
             self._files[filename] = data
             self.__persist_filedata(data)
+            return data
 
     def remove_file(self, filename: str):
         with self._lock:
@@ -131,19 +138,38 @@ class Repository(metaclass=Singleton):
             file_data: FileMetadata = self._files[filename]
             if new_status:
                 file_data.status = FileStatus[new_status]
-            self._files[filename] = self.__update_metadata(file_data)
+            self._files[filename] = file_data
             self.__persist_filedata(self._files[filename])
+    
+    def update_stat(self, filename: str) -> FileMetadata:
+        meta = self.find(filename)
+        return self.__update_metadata(meta)
+
+    def init_meta(self, name, digest, size):
+        # TODO: make file downloads separate
+        meta = FileMetadata(dict(name=name, digest=digest, size=size, path=os.path.join(self._path, name), status=FileStatus.DOWNLOADING))
+        with self._lock:
+            self.__update_metadata(meta)
+            self.__persist_filedata(meta)
+            self._files[name] = meta
+        return meta
 
     def __persist_filedata(self, data: FileMetadata) -> None:
-        path = self._path + data.name + ".yaml"
+        path = os.path.join(self._path, data.name + ".yaml")
         with open(path, "w") as f:
             yaml.dump(data.as_dict(), f)
 
     def __update_metadata(self, data: FileMetadata) -> FileMetadata:
-        new_hash = self.__calculate_hash(data.path)
-        new_size = os.path.getsize(data.path)
-        data.digest = new_hash
-        data.size = new_size
+        try:
+            new_size = os.path.getsize(data.path)
+            new_hash = self.__calculate_hash(data.path)
+        except:
+            new_size = 0
+            new_hash = None
+        data.current_digest = new_hash
+        data.current_size = new_size
+        if not data.size:
+            data.size = data.current_size
         return data
 
     def __calculate_hash(self, path: str) -> str:

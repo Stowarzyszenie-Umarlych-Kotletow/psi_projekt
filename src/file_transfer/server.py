@@ -23,10 +23,10 @@ class ServerHandler:
         self._id = uuid4()
         self._logger = logging.getLogger("ServerHandler")
 
-    def new_consumer(self, file: FileInfo) -> FileConsumerContext:
-        return FileConsumerContext(self._controller, file)
+    def new_consumer(self, file: FileInfo, endpoint: Optional[Tuple[str, int]]) -> FileConsumerContext:
+        return FileConsumerContext(self._controller, file, endpoint)
 
-    async def handle_request(self, request: Request):
+    async def handle_request(self, request: Request, endpoint: Tuple[str, int]):
         range: ByteRange = None
         digest: str = None
         range_raw = request.headers.range
@@ -46,7 +46,7 @@ class ServerHandler:
             if digest != file.digest:
                 return Response(ProtoStatusCode.C412_PRECONDITION_FAILED)
 
-        provider = self.new_consumer(file)
+        provider = self.new_consumer(file, endpoint)
         return FileResponse(provider, range)
 
     async def handle_client(self, reader: StreamReader, writer: StreamWriter):
@@ -80,7 +80,7 @@ class ServerHandler:
             log_extra["method"] = request.method.value
             log_extra["urn"] = request.urn
             try:
-                response = await self.handle_request(request)
+                response = await self.handle_request(request, (ip, port))
             except UnsupportedError as e:
                 return await error_response(ProtoStatusCode.C400_BAD_REQUEST, e)
             except InvalidRangeError as e:

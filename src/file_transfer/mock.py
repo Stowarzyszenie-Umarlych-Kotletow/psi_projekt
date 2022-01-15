@@ -3,11 +3,14 @@ from typing import Optional
 
 
 class FileInfo:
-    def __init__(self, name: str, path: str, size: int, digest: str) -> None:
+    def __init__(
+        self, name: str, path: str, size: int, digest: str, current_size: int
+    ) -> None:
         self.name = name
         self.path = path
         self.size = size
         self.digest = digest
+        self.current_size = current_size
 
 
 class Controller:

@@ -151,6 +151,8 @@ class FileDataStruct(Struct):
         return self._file_name
 
     def get_file_hash(self) -> str:
+        if self.hash_is_empty():
+            return None # TODO: BRO PLS FIX ME
         return str(self._file_hash, ENCODING)
 
     def get_file_name(self) -> str:

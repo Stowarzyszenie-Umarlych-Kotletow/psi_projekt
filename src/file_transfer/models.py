@@ -192,7 +192,7 @@ class FileProvider(ABC):
     def should_stop(self) -> bool:
         return False
 
-    def stop() -> None:
+    def stop(self) -> None:
         pass
 
 
