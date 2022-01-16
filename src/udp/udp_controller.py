@@ -37,8 +37,6 @@ class UdpController:
         self._known_peers_lock = threading.Lock()
 
         self._search_results: Dict[str, List[FoundResponse]] = {}
-
-        # common lock for searching, found_responses and peers_not_responded
         self._search_lock = threading.Lock()
 
     def _add_receive_callbacks(self):
@@ -112,7 +110,7 @@ class UdpController:
             if len(missing_peers) != 0:
                 self._logger.info(
                     "Search | %s peers did not respond, retrying search for file %s with digest %s (%s/%s)",
-                    len(missing_peers), file_name, file_digest, retry+1, SEARCH_RETRIES)
+                    len(missing_peers), file_name, file_digest, retry + 1, SEARCH_RETRIES)
                 with self._search_lock:
                     self._search_results[file_name].clear()
                 self._broadcast_socket.send(find_datagram.to_bytes)
@@ -132,7 +130,7 @@ class UdpController:
             if response.is_found:
                 results_dict.setdefault(response.digest, []).append(response)
         self._logger.info("Search | Found %s in %s out of %s peers", file_name,
-                          sum(len(list) for list in results_dict.items()), len(peers_available))
+                          sum(len(_list) for _list in results_dict.items()), len(peers_available))
         return results_dict
 
     # UDP BROADCAST RECEIVE CALLBACKS
@@ -166,29 +164,30 @@ class UdpController:
         received_find_datagram = FindDatagram.from_bytes(datagram_bytes)
         if received_find_datagram is None:
             return
-        find_struct = received_find_datagram.message
-
+        find_struct: FileDataStruct = received_find_datagram.message
         # check if peer is known
         ip_address = address[0]
         peer = self.get_peer_by_ip(ip_address)
         if peer is None:
+            self._logger.debug("Find | Received datagram from unknown host %s, skipping", address[0])
             return
 
         self._logger.debug("Find | Received datagram from %s", address[0])
-        response_datagram = None
+
         try:
             file: FileMetadata = self._controller.get_file(find_struct.file_name)
-            target_digest = find_struct.file_digest
+            target_digest: str = find_struct.file_digest
             if target_digest and file.digest != target_digest:
-                self._logger.warning("Find | Asked for file %s with digest %.8s, but local is %.8s", target_digest, file.digest)
+                self._logger.warning("Find | Asked for file %s with digest %.8s, but local is %.8s", target_digest,
+                                     file.digest)
                 raise MessageError("Hash mismatch")
             response_datagram = FoundDatagram(FileDataStruct(file.name, file.digest, file.size))
             self._logger.debug("Find | Sending positive reply for file %s with digest %.8s", file.name, file.digest)
         except Exception as ex:
             response_datagram = NotFoundDatagram(find_struct)
-            self._logger.debug("Find | Sending negative reply for file %s with digest %.8s", find_struct.file_name, find_struct.file_digest)
-            pass
-        
+            self._logger.debug("Find | Sending negative reply for file %s with digest %.8s", find_struct.file_name,
+                               find_struct.file_digest)
+
         unicast_port = peer['unicast_port']
         self._unicast_socket.send_to(response_datagram.to_bytes, ip_address, unicast_port)
 
@@ -209,15 +208,20 @@ class UdpController:
             self._logger.warning("Found | Received from unknown peer %s", provider_ip)
             return
 
-        # create find_response
-        find_response = FoundResponse(received_found_datagram.message, provider_ip, True)
+        # create found_response
+        found_response = FoundResponse(received_found_datagram.message, provider_ip, True)
 
         # add provider to the set
         with self._search_lock:
-            result_list = self._search_results.get(find_response.name)
+            result_list = self._search_results.get(found_response.name)
             if result_list is not None:
-                result_list.append(find_response)
-        self._logger.debug("Found | Found file %s with digest %.8s, peer %s", find_response.name, find_response.digest, provider_ip)
+                result_list.append(found_response)
+
+        self._logger.debug("Found | Found file %s with digest %.8s, of size %s from peer %s",
+                           found_response.name,
+                           found_response.digest,
+                           found_response.file_size,
+                           provider_ip)
 
     def not_found_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
         # check if datagram is of type FoundDatagram
