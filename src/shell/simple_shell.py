@@ -5,7 +5,7 @@ from cmd import Cmd
 from prettytable import PrettyTable
 
 from common.config import FINGERPRINT_LENGTH
-from common.exceptions import FileDuplicateException
+from common.exceptions import FileDuplicateException, FileNameTooLongException
 from common.models import FileStatus
 from repository.repository import NotFoundError
 from shell.controller import FileStateContext, Controller
@@ -92,6 +92,9 @@ class SimpleShell(Cmd):
             return
         except NotFoundError:
             pass
+        except FileNameTooLongException as err:
+            print(err)
+            return
         print("Searching... please wait")
         responses = asyncio.run(self._controller.search_file(inp))
         if len(responses) == 0:
@@ -141,6 +144,8 @@ class SimpleShell(Cmd):
         try:
             result = self._controller.add_file(inp)
             print(f"Added file {result.name} with digest {result.digest}")
+        except FileNameTooLongException as err:
+            print(err)
         except Exception as err:
             print("Error adding file: ", err)
 

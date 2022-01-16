@@ -5,11 +5,11 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional, Tuple, Dict
 
-from common.config import TCP_PORT
+from common.config import TCP_PORT, MAX_FILENAME_LENGTH
 from common.models import AbstractController, FileMetadata, FileStatus
 from file_transfer.client import ClientHandler
 from file_transfer.context import FileConsumerContext, FileProviderContext
-from common.exceptions import FileDuplicateException, LogicError
+from common.exceptions import FileDuplicateException, LogicError, FileNameTooLongException
 from common.tasks import new_loop, in_background
 from file_transfer.server import ServerHandler
 from repository.repository import NotFoundError, Repository
@@ -214,6 +214,8 @@ class Controller(AbstractController):
             raise NotFoundError(f"File '{name}' not found in repository")
 
     def get_file(self, name) -> FileMetadata:
+        if len(name) > MAX_FILENAME_LENGTH:
+            raise FileNameTooLongException(f"File name exceeds {MAX_FILENAME_LENGTH} characters")
         return self._get_file_state(name).file_meta
 
     def add_consumer(self, context):

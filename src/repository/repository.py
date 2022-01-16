@@ -6,7 +6,8 @@ import tempfile
 
 from enum import Enum
 
-from common.exceptions import LogicError, FileDuplicateException
+from common.config import MAX_FILENAME_LENGTH
+from common.exceptions import LogicError, FileDuplicateException, FileNameTooLongException
 from common.models import FileMetadata, FileStatus
 
 
@@ -78,6 +79,8 @@ class Repository:
                 raise RepositoryModificationError("Is not a file")
 
             filename = os.path.basename(path)
+            if len(filename) > MAX_FILENAME_LENGTH:
+                raise FileNameTooLongException(f"File name exceeds {MAX_FILENAME_LENGTH} characters")
             if filename in self._files.keys():
                 raise RepositoryModificationError(
                     "This file is already in the repository"
