@@ -97,7 +97,8 @@ class UdpController:
             peers_left = peers_available
             with self._search_lock:
                 for result in self._search_results[file_name]:
-                    peers_left.remove(result.provider_ip)
+                    if result.provider_ip in peers_left:
+                        peers_left.remove(result.provider_ip)
             return peers_left
 
         find_struct = FileDataStruct(file_name, file_digest)
@@ -114,8 +115,8 @@ class UdpController:
                 self._logger.info(
                     "Search | %s peers did not respond, retrying search for file %s with digest %s (%s/%s)",
                     len(missing_peers), file_name, file_digest, retry + 1, SEARCH_RETRIES)
-                with self._search_lock:
-                    self._search_results[file_name].clear()
+                # with self._search_lock:  # we dont want to delete recently found providers
+                #     self._search_results[file_name].clear()
                 self._broadcast_socket.send(find_datagram.to_bytes)
                 await asyncio.sleep(FINDING_TIME)
 
