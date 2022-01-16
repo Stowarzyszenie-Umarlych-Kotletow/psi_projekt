@@ -2,8 +2,7 @@ import datetime
 
 
 class Peer:
-    def __init__(self, ip_address: str, tcp_port: int, unicast_port: int,
-                 last_updated: datetime = datetime.datetime.now()):
+    def __init__(self, ip_address: str, tcp_port: int, unicast_port: int, last_updated: datetime):
         self._ip_address = ip_address
         self._tcp_port = tcp_port
         self._unicast_port = unicast_port
@@ -24,3 +23,7 @@ class Peer:
     @property
     def last_updated(self):
         return self._last_updated
+
+    @last_updated.setter
+    def last_updated(self, date: datetime):
+        self._last_updated = date

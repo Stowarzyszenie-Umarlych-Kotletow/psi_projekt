@@ -160,7 +160,8 @@ class UdpController:
             self._known_peers[ip_address] = Peer(
                 ip_address=ip_address,
                 tcp_port=here_struct.tcp_port,
-                unicast_port=here_struct.unicast_port
+                unicast_port=here_struct.unicast_port,
+                last_updated=datetime.datetime.now()
             )
 
     def find_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):

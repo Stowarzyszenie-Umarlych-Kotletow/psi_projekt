@@ -10,4 +10,5 @@ psutil==5.9.0
 PyYAML==6.0
 tomli==1.2.3
 typing_extensions==4.0.1
+prettytable==3.0.0
 -e .
