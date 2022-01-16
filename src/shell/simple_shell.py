@@ -93,7 +93,7 @@ class SimpleShell(Cmd):
         except NotFoundError:
             pass
         except FileNameTooLongException as err:
-            print(err)
+            print("Error searching file:", err)
             return
         print("Searching... please wait")
         responses = asyncio.run(self._controller.search_file(inp))
@@ -144,8 +144,6 @@ class SimpleShell(Cmd):
         try:
             result = self._controller.add_file(inp)
             print(f"Added file {result.name} with digest {result.digest}")
-        except FileNameTooLongException as err:
-            print(err)
         except Exception as err:
             print("Error adding file: ", err)
 
