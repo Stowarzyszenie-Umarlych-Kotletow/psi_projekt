@@ -246,8 +246,6 @@ class UdpController:
         if received_found_datagram is None:
             return
 
-        # todo check if found response matches _finding (file hash and file name)
-
         provider_ip = address[0]
 
         # check if provider is in known peers

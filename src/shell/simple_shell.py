@@ -7,6 +7,7 @@ from prettytable import PrettyTable
 from common.config import FINGERPRINT_LENGTH
 from common.exceptions import FileDuplicateException
 from common.models import FileStatus
+from repository.repository import NotFoundError
 from shell.controller import FileStateContext, Controller
 from udp.found_response import FoundResponse
 
@@ -20,13 +21,13 @@ class SimpleShell(Cmd):
     intro = "Welcome to UberP2P! Type ? to list commands"
 
     def do_exit(self, inp):
-        """exit the application."""
+        """exit: exit the application"""
         self._controller.stop()
         print("Bye")
         return True
 
-    def do_list_peers(self, inp):
-        """show list of known peers."""
+    def peers(self, inp):
+        """peers: show list of known peers"""
         peers_table = PrettyTable()
         peers_table.field_names = ["ID", "IP address", "Last updated"]
         peers = self._controller.known_peers_list
@@ -35,7 +36,7 @@ class SimpleShell(Cmd):
         print(peers_table)
 
     def do_status(self, inp):
-        """display program status."""
+        """status: display program status"""
 
         def parse_status_msg(file: FileStateContext):
             meta = file.file_meta
@@ -49,11 +50,11 @@ class SimpleShell(Cmd):
                     else "searching"
                 )
                 progress = 0 if not meta.size else meta.current_size / meta.size
-                return (f"DOWNLOADING", f"{progress * 100:.2f}%", peer)
+                return f"DOWNLOADING", f"{progress * 100:.2f}%", peer
             elif len(consumers) > 0:
-                return (f"UPLOADING", "---", f"{len(consumers)} clients")
+                return f"UPLOADING", "---", f"{len(consumers)} clients"
             else:
-                return (meta.status.name, "---", "---")
+                return meta.status.name, "---", "---"
 
         status_table = PrettyTable()
         status_table.field_names = [
@@ -83,13 +84,13 @@ class SimpleShell(Cmd):
 
         print(status_table)
 
-    def do_download(self, inp):
-        """search and download for files in the network"""
+    def do_search(self, inp):
+        """search <file_name>: search for file in the network"""
         try:
             self._controller.get_file(inp)
             print("File already exists in your local repository")
             return
-        except:
+        except NotFoundError:
             pass
         print("Searching... please wait")
         responses = asyncio.run(self._controller.search_file(inp))
@@ -105,7 +106,13 @@ class SimpleShell(Cmd):
                 [index, name, digest[:FINGERPRINT_LENGTH], f"{len(providers)} peers"]
             )
 
+        print("Files found in the network:")
         print(search_table)
+        return responses
+
+    def do_download(self, inp):
+        """download <file_name>: download file with given name from the network"""
+        responses = self.do_search(inp)
 
         if len(responses) == 1:
             target_digest = next(iter(responses))
@@ -129,6 +136,7 @@ class SimpleShell(Cmd):
             print(err)
 
     def do_add(self, inp):
+        """add <file_path>: add file to the local repository with absolute path"""
         try:
             result = self._controller.add_file(inp)
             print(f"Added file {result.name} with digest {result.digest}")
@@ -136,6 +144,8 @@ class SimpleShell(Cmd):
             print("Error adding file: ", err)
 
     def do_remove(self, inp):
+        """remove <file_name>: remove file from local repository"""
+
         try:
             file = self._controller.get_file(inp)
             print(f"Deleting file '{file.name}' with status '{file.status}'")
@@ -144,9 +154,7 @@ class SimpleShell(Cmd):
             print("Cannot remove the file: ", e)
 
     def do_info(self, inp):
-        """
-        Returns detailed info about the specified file
-        """
+        """status: display detailed info about the specified file"""
         try:
             file = self._controller.get_file(inp)
             table = PrettyTable()
