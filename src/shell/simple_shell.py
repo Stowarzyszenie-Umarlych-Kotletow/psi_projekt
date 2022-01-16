@@ -4,6 +4,8 @@ from cmd import Cmd
 from typing import List, Dict
 from shell.controller import FileStateContext, Controller
 from udp.found_response import FoundResponse
+from udp.peer import Peer
+
 from common.config import (
     MAX_FILENAME_LENGTH,
     MAX_RSP_ID_SIZE,
@@ -17,13 +19,11 @@ from common.config import (
 )
 
 
-def parse_peers(peers: dict):
+def parse_peers(peers: List[Peer]):
     index = 0
     return_str = ""
-    for key in peers:
-        peer = peers[key]
-        ip = key
-        return_str += f"{index}: IP: {ip} last updated: {peer['last_updated']}\n"
+    for peer in peers:
+        return_str += f"{index}: IP: {peer.ip_address} last updated: {peer.last_updated}\n"
         index += 1
     return return_str
 
@@ -81,7 +81,7 @@ class SimpleShell(Cmd):
 
     def do_list_peers(self, inp):
         """show list of known peers."""
-        print(parse_peers(self._controller.known_peers), end="")
+        print(parse_peers(self._controller.known_peers_list), end="")
 
     def do_status(self, inp):
         """display program status."""
@@ -132,9 +132,12 @@ class SimpleShell(Cmd):
         response: FoundResponse = random.choice(responses[target_digest])
         target_ip = response.provider_ip
         peer = self._controller.get_peer_by_ip(target_ip)
-        target_port = peer['tcp_port']
+        target_port = peer.tcp_port
         self._controller.schedule_download(response.name, response.digest, 0, (target_ip, target_port))
 
     def do_add(self, inp):
-        result = self._controller.add_file(inp)
-        print(f"Added file {result.name} with digest {result.digest}")
+        try:
+            result = self._controller.add_file(inp)
+            print(f"Added file {result.name} with digest {result.digest}")
+        except Exception as err:
+            print("Error adding file: " + str(err))

@@ -151,6 +151,10 @@ class Controller:
     def known_peers(self):
         return self._udp_controller.known_peers
 
+    @property
+    def known_peers_list(self):
+        return self._udp_controller.known_peers_list
+
     def get_peer_by_ip(self, ip) -> Peer:
         return self._udp_controller.get_peer_by_ip(ip)
 
