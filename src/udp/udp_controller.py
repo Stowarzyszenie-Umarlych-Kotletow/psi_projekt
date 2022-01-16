@@ -171,7 +171,7 @@ class UdpController:
         find_struct: FileDataStruct = received_find_datagram.message
         # check if peer is known
         ip_address = address[0]
-        peer = self.get_peer_by_ip(ip_address)
+        peer: Peer = self.get_peer_by_ip(ip_address)
         if peer is None:
             self._logger.debug("Find | Received datagram from unknown host %s, skipping", address[0])
             return
@@ -192,7 +192,7 @@ class UdpController:
             self._logger.debug("Find | Sending negative reply for file %s with digest %.8s", find_struct.file_name,
                                find_struct.file_digest)
 
-        unicast_port = peer['unicast_port']
+        unicast_port = peer.unicast_port
         self._unicast_socket.send_to(response_datagram.to_bytes, ip_address, unicast_port)
 
     # UDP UNICAST RECEIVE CALLBACKS
