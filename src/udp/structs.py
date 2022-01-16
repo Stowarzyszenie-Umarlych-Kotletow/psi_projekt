@@ -143,7 +143,7 @@ class HereStruct(Struct):
 class FileDataStruct(Struct):
     FORMAT = f"!{str(MAX_FILENAME_LENGTH + 1)}p64s"  # first byte of name contains size of string
 
-    def __init__(self, file_name, file_hash, file_size:int=0):
+    def __init__(self, file_name, file_hash, file_size: int = 0):
         super().__init__()
         if type(file_name) == str:
             file_name = bytes(file_name, ENCODING)
