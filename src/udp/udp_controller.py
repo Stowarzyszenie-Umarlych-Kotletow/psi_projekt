@@ -94,7 +94,7 @@ class UdpController:
         peers_available = set(self.known_peers.keys())
 
         def get_missing_peers():
-            peers_left = peers_available
+            peers_left = peers_available.copy()
             with self._search_lock:
                 for result in self._search_results[file_name]:
                     if result.provider_ip in peers_left:
