@@ -6,35 +6,23 @@ import tempfile
 
 from enum import Enum
 
-from file_transfer.exceptions import MessageError, FileDuplicateException
-from .file_metadata import FileMetadata, FileStatus
+from common.exceptions import LogicError, FileDuplicateException
+from common.models import FileMetadata, FileStatus
 
 
-class Singleton(type):
-
-    _instances = {}
-    _lock: Lock = Lock()
-
-    def __call__(cls, *args, **kwargs):
-        with cls._lock:
-            if cls not in cls._instances:
-                cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]
-
-
-class LoadingRepositoryError(MessageError):
+class LoadingRepositoryError(LogicError):
     pass
 
 
-class HashingError(MessageError):
+class HashingError(LogicError):
     pass
 
 
-class RepositoryModificationError(MessageError):
+class RepositoryModificationError(LogicError):
     pass
 
 
-class NotFoundError(MessageError):
+class NotFoundError(LogicError):
     pass
 
 
@@ -79,7 +67,6 @@ class Repository:
                     # TODO: think this through
                     continue
 
-
                 metadata = self.__update_metadata(metadata)
                 self.__persist_filedata(metadata)
 
@@ -104,12 +91,11 @@ class Repository:
                         size=filesize,
                         name=filename,
                         path=path,
-                        status=FileStatus.READY
+                        status=FileStatus.READY,
                     )
                 )
             )
             data.digest = data.current_digest
-            data.size = data.current_size
             self._files[filename] = data
             self.__persist_filedata(data)
             return data
@@ -118,13 +104,10 @@ class Repository:
         with self._lock:
             if filename not in self._files.keys():
                 raise RepositoryModificationError("No such file in repository")
-            #if self._files[filename].status == FileStatus.SHARING:
-            #    raise RepositoryModificationError("File currently being uploaded")
             del self._files[filename]
             yaml_path = self._path + filename + ".yaml"
-            if not os.path.exists(yaml_path):
-                raise RepositoryModificationError("Cannot find yaml file")
-            os.remove(yaml_path)
+            if os.path.exists(yaml_path):
+                os.remove(yaml_path)
 
     def get_files(self):
         return self._files
@@ -143,16 +126,23 @@ class Repository:
                 file_data.status = FileStatus[new_status]
             self._files[filename] = file_data
             self.__persist_filedata(self._files[filename])
-    
+
     def update_stat(self, filename: str) -> FileMetadata:
         meta = self.find(filename)
         return self.__update_metadata(meta)
 
     def init_meta(self, name, digest, size):
-        # TODO: make file downloads separate
         if name in self._files:
             raise FileDuplicateException("File already exists")
-        meta = FileMetadata(dict(name=name, digest=digest, size=size, path=os.path.join(self._path, name), status=FileStatus.DOWNLOADING))
+        meta = FileMetadata(
+            dict(
+                name=name,
+                digest=digest,
+                size=size,
+                path=os.path.join(self._path, name),
+                status=FileStatus.DOWNLOADING,
+            )
+        )
         with self._lock:
             self.__update_metadata(meta)
             self.__persist_filedata(meta)

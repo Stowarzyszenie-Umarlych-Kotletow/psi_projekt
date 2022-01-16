@@ -17,7 +17,7 @@ def all_ip4_addresses():
         if_addresses = ifaddresses(interface)
         if AF_INET in if_addresses:
             for link in if_addresses[AF_INET]:
-                ip_list.append(link['addr'])
+                ip_list.append(link["addr"])
     return ip_list
 
 
@@ -27,8 +27,8 @@ def all_ip4_broadcasts():
         if_addresses = ifaddresses(interface)
         if AF_INET in if_addresses:
             for link in if_addresses[AF_INET]:
-                if 'broadcast' in link.keys():
-                    ip_list.append(link['broadcast'])
+                if "broadcast" in link.keys():
+                    ip_list.append(link["broadcast"])
     return ip_list
 
 

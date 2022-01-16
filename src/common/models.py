@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from abc import ABC
 from enum import Enum
+from typing import Optional
 
 
 class FileStatus(str, Enum):
@@ -35,7 +36,7 @@ class FileMetadata:
             size=self.size,
             status=self.status.value,
             current_size=self.current_size,
-            current_digest=self.current_digest
+            current_digest=self.current_digest,
         )
 
     @property
@@ -46,3 +47,21 @@ class FileMetadata:
     def can_share(self):
         return self.status == FileStatus.READY and self.is_valid
 
+class AbstractController(ABC):
+    def get_file(self, name) -> FileMetadata:
+        pass
+
+    def add_consumer(self, context):
+        pass
+
+    def remove_consumer(self, context):
+        pass
+
+    def add_provider(self, context):
+        pass
+
+    def remove_provider(self, context, exc: Optional[Exception]):
+        pass
+
+    def provider_update(self, context, bytes_downloaded: int):
+        pass

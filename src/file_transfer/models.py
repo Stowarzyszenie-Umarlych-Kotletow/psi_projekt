@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
 from asyncio.streams import StreamReader, StreamWriter
+from distutils import command
 from optparse import Option
 from typing import *
 
 from aiofile.utils import async_open
 from file_transfer.exceptions import InvalidRangeError, ProtoError
 from file_transfer.io_utils import calc_range_len
-from file_transfer.mock import FileInfo
 from file_transfer.parse_utils import *
 from file_transfer.enums import ContentType, KnownHeader, ProtoMethod, ProtoStatusCode
+from common.models import FileMetadata
+from common.exceptions import LogicError
 
 TRequest = TypeVar("TRequest", bound="Request")
 
@@ -185,7 +187,7 @@ class Response:
 class FileProvider(ABC):
     @property
     @abstractmethod
-    def file(self) -> FileInfo:
+    def file(self) -> FileMetadata:
         pass
 
     @property
@@ -276,7 +278,7 @@ class FileResponse(Response):
                     writer.write(read_bytes)
                     await writer.drain()
                 if to_read > 0:
-                    print(
+                    raise LogicError(
                         f"Expected {content_length} bytes, got {content_length - to_read}"
                     )
             await writer.drain()

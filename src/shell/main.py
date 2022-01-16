@@ -17,6 +17,7 @@ def configure_logging():
 def run():
     configure_logging()
     controller = Controller()
+    print("Starting... this might take a bit")
     controller.start()
     SimpleShell(controller).cmdloop()
 

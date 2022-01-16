@@ -9,7 +9,11 @@ from common.config import *
 
 
 class UdpSocket:
-    def __init__(self, address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT), buffer_size: int = UDP_BUFFER_SIZE):
+    def __init__(
+        self,
+        address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT),
+        buffer_size: int = UDP_BUFFER_SIZE,
+    ):
         self._buffer_size = buffer_size
         self._address = address
         self._socket = None
@@ -87,6 +91,8 @@ class UdpSocket:
 
 
 class BroadcastSocket(UdpSocket):
-    def __init__(self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE):
+    def __init__(
+        self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE
+    ):
         super().__init__(address, buffer_size)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

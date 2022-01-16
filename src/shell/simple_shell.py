@@ -5,7 +5,8 @@ from cmd import Cmd
 from prettytable import PrettyTable
 
 from common.config import FINGERPRINT_LENGTH
-from file_transfer.exceptions import FileDuplicateException
+from common.exceptions import FileDuplicateException
+from common.models import FileStatus
 from shell.controller import FileStateContext, Controller
 from udp.found_response import FoundResponse
 
@@ -27,12 +28,10 @@ class SimpleShell(Cmd):
     def do_list_peers(self, inp):
         """show list of known peers."""
         peers_table = PrettyTable()
-        peers_table.field_names = ['ID', 'IP address', 'Last updated']
+        peers_table.field_names = ["ID", "IP address", "Last updated"]
         peers = self._controller.known_peers_list
-        index = 0
-        for peer in peers:
+        for (index, peer) in enumerate(peers):
             peers_table.add_row([index, peer.ip_address, peer.last_updated])
-            index += 1
         print(peers_table)
 
     def do_status(self, inp):
@@ -42,44 +41,69 @@ class SimpleShell(Cmd):
             meta = file.file_meta
             provider = file.provider
             consumers = file.consumers
-            progress = 0 if not meta.size else meta.current_size / meta.size
-            if provider:
-                endpoint_name = ":".join(provider.endpoint) if provider.endpoint else 'unknown'
-                return (
-                    f"downloading from {endpoint_name}",
-                    f"{progress * 100}%",
+
+            if meta.status == FileStatus.DOWNLOADING:
+                peer = (
+                    f"{provider.endpoint[0]}"
+                    if provider and provider.endpoint
+                    else "searching"
                 )
+                progress = 0 if not meta.size else meta.current_size / meta.size
+                return (f"DOWNLOADING", f"{progress * 100:.2f}%", peer)
             elif len(consumers) > 0:
-                return (f"uploading to {len(consumers)} clients", "")
+                return (f"UPLOADING", "---", f"{len(consumers)} clients")
             else:
-                return (meta.status, "")
+                return (meta.status.name, "---", "---")
 
         status_table = PrettyTable()
-        status_table.field_names = ['ID', 'File name', 'Fingerprint', 'Status', 'Progress']
+        status_table.field_names = [
+            "ID",
+            "File name",
+            "Fingerprint",
+            "Size",
+            "Status",
+            "Progress",
+            "Peer(s)",
+        ]
         status_data = list(self._controller.state.values())
-        index = 0
-        for file in status_data:
-            status_msg, status_progress = parse_status_msg(file)
+        for (index, file) in enumerate(status_data):
+            status_msg, status_progress, peers = parse_status_msg(file)
             meta = file.file_meta
-            status_table.add_row([index, meta.name, meta.digest[:FINGERPRINT_LENGTH], status_msg, status_progress])
-            index += 1
+            status_table.add_row(
+                [
+                    index,
+                    meta.name,
+                    meta.digest[:FINGERPRINT_LENGTH],
+                    meta.size,
+                    status_msg,
+                    status_progress,
+                    peers,
+                ]
+            )
 
         print(status_table)
 
     def do_download(self, inp):
         """search and download for files in the network"""
-        # todo check if repo does not contain such filename
+        try:
+            self._controller.get_file(inp)
+            print("File already exists in your local repository")
+            return
+        except:
+            pass
         print("Searching... please wait")
         responses = asyncio.run(self._controller.search_file(inp))
         if len(responses) == 0:
             print("No files were found in the network")
             return
         search_table = PrettyTable()
-        search_table.field_names = ['ID', 'Name', 'Fingerprint', 'From']
+        search_table.field_names = ["ID", "Name", "Fingerprint", "From"]
 
         for (index, (digest, providers)) in enumerate(responses.items()):
             name = providers[0].name
-            search_table.add_row([index, name, digest[:FINGERPRINT_LENGTH], f"{len(providers)} peers"])
+            search_table.add_row(
+                [index, name, digest[:FINGERPRINT_LENGTH], f"{len(providers)} peers"]
+            )
 
         print(search_table)
 
@@ -95,7 +119,12 @@ class SimpleShell(Cmd):
         peer = self._controller.get_peer_by_ip(target_ip)
         target_port = peer.tcp_port
         try:
-            self._controller.schedule_download(response.name, response.digest, 0, (target_ip, target_port))
+            self._controller.schedule_download(
+                response.name,
+                response.digest,
+                response.file_size,
+                (target_ip, target_port),
+            )
         except FileDuplicateException as err:
             print(err)
 
@@ -104,4 +133,33 @@ class SimpleShell(Cmd):
             result = self._controller.add_file(inp)
             print(f"Added file {result.name} with digest {result.digest}")
         except Exception as err:
-            print("Error adding file: " + str(err))
+            print("Error adding file: ", err)
+
+    def do_remove(self, inp):
+        try:
+            file = self._controller.get_file(inp)
+            print(f"Deleting file '{file.name}' with status '{file.status}'")
+            self._controller.remove_file(file.name)
+        except Exception as e:
+            print("Cannot remove the file: ", e)
+
+    def do_info(self, inp):
+        """
+        Returns detailed info about the specified file
+        """
+        try:
+            file = self._controller.get_file(inp)
+            table = PrettyTable()
+            table.field_names = ["Name", "Fingerprint", "Status", "Size", "Path"]
+            table.add_row(
+                [
+                    file.name,
+                    file.digest[:FINGERPRINT_LENGTH],
+                    file.status.name,
+                    file.size,
+                    file.path,
+                ]
+            )
+            print(table)
+        except Exception as e:
+            print("Not found: ", e)

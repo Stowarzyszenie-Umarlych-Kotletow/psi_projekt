@@ -153,7 +153,6 @@ class FileDataStruct(Struct):
             raise TypeError("Invalid file_name or file_hash type")
         self._file_name: bytes = file_name
         self._file_hash: bytes = file_hash
-        print(file_size)
         self._file_size: int = file_size
 
     @property

@@ -1,16 +1,12 @@
-from cmath import log
-from io import SEEK_SET
 import logging
-import os
 from uuid import UUID, uuid4
 from common.config import DIGEST_ALG
-from file_transfer.mock import Controller, FileInfo
 from asyncio.streams import StreamReader, StreamWriter
 from typing import *
+from common.exceptions import LogicError
+from common.models import AbstractController, FileMetadata
 from file_transfer.enums import KnownHeader, ProtoMethod, ProtoStatusCode
-from file_transfer.exceptions import (
-    ProtoError, MessageError,
-)
+from file_transfer.exceptions import ProtoError
 from file_transfer.models import (
     HeadersContainer,
     Request,
@@ -23,20 +19,18 @@ from aiofile.utils import async_open
 
 class ClientHandler:
     def __init__(
-        self, controller: Controller, file: FileInfo, endpoint: Optional[Tuple[str, int]]
+        self,
+        context: FileProviderContext
     ) -> None:
-        self._controller = controller
         self._id = uuid4()
         self._logger = logging.getLogger("ClientHandler")
-        self._context = self.new_provider(file, endpoint)
-        self.chunk_size = 16*1024
-
-    def new_provider(self, file: FileInfo, endpoint) -> FileProviderContext:
-        return FileProviderContext(self._controller, file, endpoint)
+        self._context = context
+        self.chunk_size = 16 * 1024
 
     async def handle_content(
-        self, context: FileProviderContext, response: Response, reader: StreamReader
+        self, response: Response, reader: StreamReader
     ):
+        context = self._context
         file = context.file
         content_length = response.headers.content_length
         content_range = response.headers.content_range
@@ -45,8 +39,8 @@ class ClientHandler:
         else:
             file_offset = 0
 
-        open(file.path, 'a').close() # create if it doesn't exist
-        with open(file.path, 'rb+') as file_raw:
+        open(file.path, "a").close()  # create if it doesn't exist
+        with open(file.path, "rb+") as file_raw:
             async with async_open(file_raw) as writer:
                 writer.seek(file_offset)
                 while file_offset < content_length and not context.should_stop:
@@ -60,39 +54,36 @@ class ClientHandler:
                     context.update(file_offset)
                 file_raw.truncate(file_offset)
             if file_offset < content_length:
-                # TODO: replace with logger?
-                # TODO: make and raise an exception for invalid download
-                raise MessageError(f"Expected {content_length} bytes, got {file_offset}")
-
+                raise LogicError(
+                    f"Expected {content_length} bytes, got {file_offset}"
+                )
 
     async def handle_connection(self, reader: StreamReader, writer: StreamWriter):
-        log_extra = dict(id=self._id, method="GET", urn=self._context.file.name)
+        context = self._context
+        log_extra = dict(id=self._id, method="GET", urn=context.file.name)
         (ip, port) = writer.get_extra_info("peername")
         self._logger.debug("New connection to %s:%s", ip, port, extra=log_extra)
 
         try:
-            with self._context as context:
-                file = context.file
-                file_offset = file.current_size
-                headers = HeadersContainer()
-                if file.digest:
-                    headers[KnownHeader.IF_DIGEST] = f"{DIGEST_ALG}={file.digest}"
-                if file_offset:
-                    headers[KnownHeader.RANGE] = f"bytes {file_offset}-"
+            file = context.file
+            file_offset = file.current_size
+            headers = HeadersContainer()
+            if file.digest:
+                headers[KnownHeader.IF_DIGEST] = f"{DIGEST_ALG}={file.digest}"
+            if file_offset:
+                headers[KnownHeader.RANGE] = f"bytes {file_offset}-"
 
-                request = Request(ProtoMethod.GET, file.name, headers)
-                await request.write_to(writer)
+            request = Request(ProtoMethod.GET, file.name, headers)
+            await request.write_to(writer)
 
-                (response, content_reader) = await Response.read_from(reader)
-                response.assert_ok()
-                if not content_reader:
-                    raise ProtoError(ProtoStatusCode.C404_NOT_FOUND)
-                
-                await self.handle_content(context, response, content_reader)
-                return True
+            (response, content_reader) = await Response.read_from(reader)
+            response.assert_ok()
+            if not content_reader:
+                raise ProtoError(ProtoStatusCode.C404_NOT_FOUND)
+
+            await self.handle_content(response, content_reader)
         except Exception as e:
             self._logger.warning("Download error", exc_info=e, extra=log_extra)
             raise e
         finally:
             writer.close()
-        return False
