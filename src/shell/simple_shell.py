@@ -16,8 +16,8 @@ class SimpleShell(Cmd):
         super().__init__()
         self._controller: Controller = controller
 
-    prompt = "Ü> "
-    intro = "Welcome to Überfreishare! Type ? to list commands"
+    prompt = "> "
+    intro = "Welcome to UberP2P! Type ? to list commands"
 
     def do_exit(self, inp):
         """exit the application."""
