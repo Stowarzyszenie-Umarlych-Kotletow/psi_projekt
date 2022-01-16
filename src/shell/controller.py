@@ -150,7 +150,7 @@ class Controller:
     def known_peers(self):
         return self._udp_controller.known_peers
 
-    def get_peer(self, ip) -> "TODO":
+    def get_peer_by_ip(self, ip) -> "TODO":
         return self._udp_controller.get_peer_by_ip(ip)
 
     async def search_file(self, file_name: str = None, file_hash: str = None) -> dict:
@@ -187,3 +187,7 @@ class Controller:
 
     def add_file(self, path):
         self._repo.add_file(path)
+
+    @property
+    def state(self):
+        return self._state

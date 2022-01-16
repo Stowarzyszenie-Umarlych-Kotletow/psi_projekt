@@ -98,8 +98,8 @@ class SimpleShell(Cmd):
             + "| "
             + "progress"
         )
-        status = self._controller._state.values()
-        print(parse_status(status), end="")
+        status = self._controller.state.values()
+        print(parse_status(list(status)), end="")
         print("=" * STATUS_HR_LEN)
 
     def do_search(self, inp):
