@@ -26,7 +26,7 @@ class SimpleShell(Cmd):
         print("Bye")
         return True
 
-    def peers(self, inp):
+    def do_peers(self, inp):
         """peers: show list of known peers"""
         peers_table = PrettyTable()
         peers_table.field_names = ["ID", "IP address", "Last updated"]
