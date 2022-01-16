@@ -113,7 +113,8 @@ class SimpleShell(Cmd):
     def do_download(self, inp):
         """download <file_name>: download file with given name from the network"""
         responses = self.do_search(inp)
-
+        if responses is None:
+            return
         if len(responses) == 1:
             target_digest = next(iter(responses))
         else:
