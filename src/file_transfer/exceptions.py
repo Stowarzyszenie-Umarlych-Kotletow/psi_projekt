@@ -30,6 +30,12 @@ class MessageError(Exception):
         return f"{self.msg}"
 
 
+class FileDuplicateException(Exception):
+    def __init__(self, msg: Optional[str] = None, *args: object) -> None:
+        super().__init__(*args)
+        self.msg = msg
+
+
 class InvalidRangeError(MessageError):
     pass
 

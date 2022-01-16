@@ -1,68 +1,13 @@
 import asyncio
 import random
 from cmd import Cmd
-from typing import List, Dict
+
+from prettytable import PrettyTable
+
+from common.config import FINGERPRINT_LENGTH
+from file_transfer.exceptions import FileDuplicateException
 from shell.controller import FileStateContext, Controller
 from udp.found_response import FoundResponse
-from udp.peer import Peer
-
-from common.config import (
-    MAX_FILENAME_LENGTH,
-    MAX_RSP_ID_SIZE,
-    PEER_FP_SHORT,
-    FILE_FP_HR_LEN,
-    MAX_PROGRESS_MSG_LEN,
-    MAX_STATUS_MSG_SIZE,
-    TABLE_SEP_LEN,
-    SEARCH_HR_LEN,
-    STATUS_HR_LEN,
-)
-
-
-def parse_peers(peers: List[Peer]):
-    index = 0
-    return_str = ""
-    for peer in peers:
-        return_str += f"{index}: IP: {peer.ip_address} last updated: {peer.last_updated}\n"
-        index += 1
-    return return_str
-
-
-def parse_status(status_data: List[FileStateContext]):
-    def parse_status_msg(file: FileStateContext):
-        meta = file.file_meta
-        provider = file.provider
-        consumers = file.consumers
-        progress = 0 if not meta.size else meta.current_size / meta.size
-        if provider:
-            endpoint_name = ":".join(provider.endpoint) if provider.endpoint else 'unknown'
-            return (
-                f"downloading from {endpoint_name}",
-                f"{progress * 100}%",
-            )
-        elif len(consumers) > 0:
-            return (f"uploading to {len(consumers)} clients", "")
-        else:
-            return (meta.status, "")
-
-    index = 0
-    return_str = ""
-    for file in status_data:
-        status_msg, status_progress = parse_status_msg(file)
-        meta = file.file_meta
-        return_str += f"{str(index):{MAX_RSP_ID_SIZE}}  | {meta.name:{MAX_FILENAME_LENGTH}}  | \
-{meta.digest:.8s}     | {status_msg:{MAX_STATUS_MSG_SIZE}}| {f'{status_progress}'.rjust(MAX_PROGRESS_MSG_LEN)}\n"
-        index += 1
-    return return_str
-
-
-def parse_responses(responses: Dict[str, List[FoundResponse]]):
-    return_str = ""
-    for (index, (digest, providers)) in enumerate(responses.items()):
-        name = providers[0].name
-        return_str += f"{index:{MAX_RSP_ID_SIZE}}  | {name:{MAX_FILENAME_LENGTH}}  | \
-{digest:.8s} | {len(providers)} peers\n"
-    return return_str
 
 
 class SimpleShell(Cmd):
@@ -81,59 +26,78 @@ class SimpleShell(Cmd):
 
     def do_list_peers(self, inp):
         """show list of known peers."""
-        print(parse_peers(self._controller.known_peers_list), end="")
+        peers_table = PrettyTable()
+        peers_table.field_names = ['ID', 'IP address', 'Last updated']
+        peers = self._controller.known_peers_list
+        index = 0
+        for peer in peers:
+            peers_table.add_row([index, peer.ip_address, peer.last_updated])
+            index += 1
+        print(peers_table)
 
     def do_status(self, inp):
         """display program status."""
-        print(
-            "=" * STATUS_HR_LEN
-            + "\n"
-            + "index".ljust(MAX_RSP_ID_SIZE + TABLE_SEP_LEN)
-            + "| "
-            + "name".ljust(MAX_FILENAME_LENGTH + TABLE_SEP_LEN)
-            + "| "
-            + "fingerprint".ljust(FILE_FP_HR_LEN)
-            + "| "
-            + "status".ljust(MAX_STATUS_MSG_SIZE)
-            + "| "
-            + "progress"
-        )
-        status = self._controller.state.values()
-        print(parse_status(list(status)), end="")
-        print("=" * STATUS_HR_LEN)
 
-    def do_search(self, inp):
-        """search for files in the network"""
+        def parse_status_msg(file: FileStateContext):
+            meta = file.file_meta
+            provider = file.provider
+            consumers = file.consumers
+            progress = 0 if not meta.size else meta.current_size / meta.size
+            if provider:
+                endpoint_name = ":".join(provider.endpoint) if provider.endpoint else 'unknown'
+                return (
+                    f"downloading from {endpoint_name}",
+                    f"{progress * 100}%",
+                )
+            elif len(consumers) > 0:
+                return (f"uploading to {len(consumers)} clients", "")
+            else:
+                return (meta.status, "")
+
+        status_table = PrettyTable()
+        status_table.field_names = ['ID', 'File name', 'Fingerprint', 'Status', 'Progress']
+        status_data = list(self._controller.state.values())
+        index = 0
+        for file in status_data:
+            status_msg, status_progress = parse_status_msg(file)
+            meta = file.file_meta
+            status_table.add_row([index, meta.name, meta.digest[:FINGERPRINT_LENGTH], status_msg, status_progress])
+            index += 1
+
+        print(status_table)
+
+    def do_download(self, inp):
+        """search and download for files in the network"""
+        # todo check if repo does not contain such filename
         print("Searching... please wait")
         responses = asyncio.run(self._controller.search_file(inp))
         if len(responses) == 0:
             print("No files were found in the network")
             return
+        search_table = PrettyTable()
+        search_table.field_names = ['ID', 'Name', 'Fingerprint', 'From']
 
-        print(
-            "=" * SEARCH_HR_LEN
-            + "\nFiles found in the network:\n"
-            + "index".ljust(MAX_RSP_ID_SIZE + TABLE_SEP_LEN)
-            + "| "
-            + "name".ljust(MAX_FILENAME_LENGTH + TABLE_SEP_LEN)
-            + "| "
-            + "fingerprint".ljust(PEER_FP_SHORT)
-            + "| "
-            + "from"
-        )
-        print(parse_responses(responses), end="")
-        print("=" * SEARCH_HR_LEN)
+        for (index, (digest, providers)) in enumerate(responses.items()):
+            name = providers[0].name
+            search_table.add_row([index, name, digest[:FINGERPRINT_LENGTH], f"{len(providers)} peers"])
+
+        print(search_table)
+
         if len(responses) == 1:
             target_digest = next(iter(responses))
         else:
             print("Found multiple versions. Please choose one.")
             provider_id = int(input("Select provider index: "))
             target_digest = list(responses.keys())[provider_id]
+        print("Starting download...")
         response: FoundResponse = random.choice(responses[target_digest])
         target_ip = response.provider_ip
         peer = self._controller.get_peer_by_ip(target_ip)
         target_port = peer.tcp_port
-        self._controller.schedule_download(response.name, response.digest, 0, (target_ip, target_port))
+        try:
+            self._controller.schedule_download(response.name, response.digest, 0, (target_ip, target_port))
+        except FileDuplicateException as err:
+            print(err)
 
     def do_add(self, inp):
         try:

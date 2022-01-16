@@ -6,7 +6,7 @@ import tempfile
 
 from enum import Enum
 
-from file_transfer.exceptions import MessageError
+from file_transfer.exceptions import MessageError, FileDuplicateException
 from .file_metadata import FileMetadata, FileStatus
 
 
@@ -151,7 +151,7 @@ class Repository:
     def init_meta(self, name, digest, size):
         # TODO: make file downloads separate
         if name in self._files:
-            raise MessageError("File already exists")
+            raise FileDuplicateException("File already exists")
         meta = FileMetadata(dict(name=name, digest=digest, size=size, path=os.path.join(self._path, name), status=FileStatus.DOWNLOADING))
         with self._lock:
             self.__update_metadata(meta)

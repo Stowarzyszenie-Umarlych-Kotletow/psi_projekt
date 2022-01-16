@@ -1,8 +1,10 @@
 import datetime
 
+# todo add type hinting for last_updated
+
 
 class Peer:
-    def __init__(self, ip_address: str, tcp_port: int, unicast_port: int, last_updated: datetime):
+    def __init__(self, ip_address: str, tcp_port: int, unicast_port: int, last_updated):
         self._ip_address = ip_address
         self._tcp_port = tcp_port
         self._unicast_port = unicast_port
@@ -25,5 +27,5 @@ class Peer:
         return self._last_updated
 
     @last_updated.setter
-    def last_updated(self, date: datetime):
+    def last_updated(self, date):
         self._last_updated = date
