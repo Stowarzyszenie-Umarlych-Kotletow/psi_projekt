@@ -29,20 +29,20 @@ class Struct:
         return cls.FORMAT
 
     @classmethod
-    @property
+    # @property
     def struct_size(cls):
         return struct.calcsize(cls.FORMAT)
 
     @classmethod
     def shift_bytes_by_struct_size(cls, struct_bytes):
-        return struct_bytes[cls.struct_size:]
+        return struct_bytes[cls.struct_size():]
 
     @classmethod
     def from_bytes(cls, struct_bytes):
         """
         returns class created from retrieved struct
         """
-        cut_bytes = struct_bytes[0:cls.struct_size]
+        cut_bytes = struct_bytes[0:cls.struct_size()]
         unpacked = struct.unpack(cls.FORMAT, cut_bytes)
         return cls(*unpacked)
 
@@ -95,7 +95,7 @@ class HeaderStruct(Struct):
         we must overload that method,
         because the arguments are in the different order than struct data
         """
-        cut_bytes = struct_bytes[0:cls.struct_size]
+        cut_bytes = struct_bytes[0:cls.struct_size()]
         magick_number, proto_version, message_id = struct.unpack(cls.FORMAT, cut_bytes)
 
         if magick_number != MAGIC_NUMBER:
@@ -141,7 +141,7 @@ class HereStruct(Struct):
 
 
 class FileDataStruct(Struct):
-    FORMAT = f"!{str(MAX_FILENAME_LENGTH + 1)}p64sL"  # first byte of name contains size of string
+    FORMAT = f"!{str(MAX_FILENAME_LENGTH + 1)}p64sQ"  # first byte of name contains size of string
 
     def __init__(self, file_name, file_hash, file_size: int = 0):
         super().__init__()
@@ -153,6 +153,7 @@ class FileDataStruct(Struct):
             raise TypeError("Invalid file_name or file_hash type")
         self._file_name: bytes = file_name
         self._file_hash: bytes = file_hash
+        print(file_size)
         self._file_size: int = file_size
 
     @property

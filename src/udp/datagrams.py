@@ -58,7 +58,6 @@ class Datagram:
                 raise InvalidHeaderException(f"Message id {message_type} does not match cls {cls}")
         except InvalidHeaderException:
             return None
-
         # shift datagram_bytes by header size to message_bytes
         message_bytes = HeaderStruct.shift_bytes_by_struct_size(datagram_bytes)
 
