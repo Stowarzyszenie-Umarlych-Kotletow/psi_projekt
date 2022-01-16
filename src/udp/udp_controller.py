@@ -11,8 +11,9 @@ from file_transfer.exceptions import MessageError
 from repository.file_metadata import FileMetadata
 from udp.datagrams import HelloDatagram, HereDatagram, FindDatagram, FoundDatagram, NotFoundDatagram
 from udp.found_response import FoundResponse
-from udp.structs import FileDataStruct
+from udp.structs import FileDataStruct, HereStruct
 from udp.udp_socket import *
+from udp.peer import Peer
 
 
 class InvalidSearchArgsException(Exception):
@@ -32,8 +33,7 @@ class UdpController:
 
         self._t_broadcast_alive = Thread(target=self._alive_agent, daemon=True)
 
-        # variables starting with __ are not thread safe
-        self.__known_peers = dict()
+        self._known_peers: Dict[str, Peer] = {}
         self._known_peers_lock = threading.Lock()
 
         self._search_results: Dict[str, List[FoundResponse]] = {}
@@ -64,12 +64,15 @@ class UdpController:
         pass
 
     @property
-    def known_peers(self):
+    def known_peers(self) -> Dict[str, Peer]:
         with self._known_peers_lock:
-            known_peers_copy = copy.deepcopy(self.__known_peers)
-            return known_peers_copy
+            return copy.deepcopy(self._known_peers)
 
-    def get_peer_by_ip(self, ip):
+    @property
+    def known_peers_list(self) -> List[Peer]:
+        return list(self.known_peers.values())
+    
+    def get_peer_by_ip(self, ip) -> Peer:
         return self.known_peers.get(ip)
 
     async def search(self, file_name: str = None, file_digest: str = None) -> Dict[str, List[FoundResponse]]:
@@ -91,7 +94,7 @@ class UdpController:
         peers_available = set(self.known_peers.keys())
 
         def get_missing_peers():
-            peers_left = set(peers_available)
+            peers_left = peers_available
             with self._search_lock:
                 for result in self._search_results[file_name]:
                     peers_left.remove(result.provider_ip)
@@ -148,16 +151,17 @@ class UdpController:
 
         if received_here_datagram is None:
             return
-        message = received_here_datagram.message
+        here_struct: HereStruct = received_here_datagram.message
         self._logger.debug("Here | Discovered peer %s with TCP port %s", address[0], address[1])
 
+        ip_address = address[0]
+
         with self._known_peers_lock:
-            self.__known_peers[address[0]] = {
-                'ip': address[0],
-                'last_updated': datetime.datetime.now(),
-                'tcp_port': message.tcp_port,
-                'unicast_port': message.unicast_port
-            }
+            self._known_peers[ip_address] = Peer(
+                ip_address=ip_address,
+                tcp_port=here_struct.tcp_port,
+                unicast_port=here_struct.unicast_port
+            )
 
     def find_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
         # check if datagram is of type FindDatagram
@@ -205,7 +209,7 @@ class UdpController:
 
         # check if provider is in known peers
         if provider_ip not in self.known_peers:
-            self._logger.warning("Found | Received from unknown peer %s", provider_ip)
+            self._logger.warning("Found | Received FoundDatagram from unknown peer %s", provider_ip)
             return
 
         # create found_response
@@ -217,7 +221,7 @@ class UdpController:
             if result_list is not None:
                 result_list.append(found_response)
 
-        self._logger.debug("Found | Found file %s with digest %.8s, of size %s from peer %s",
+        self._logger.debug("Found | Found file %s with digest %.8s, of size %s, peer %s",
                            found_response.name,
                            found_response.digest,
                            found_response.file_size,
@@ -233,22 +237,25 @@ class UdpController:
 
         # check if provider is in known peers
         if provider_ip not in self.known_peers:
-            self._logger.warning("NotFound | Received from unknown peer %s", provider_ip)
+            self._logger.warning("NotFound | Received NotFoundDatagram from unknown peer %s", provider_ip)
             return
 
         # create find_response
-        find_response = FoundResponse(received_not_found_datagram.message, provider_ip, False)
+        not_found_response = FoundResponse(received_not_found_datagram.message, provider_ip, False)
 
         # add provider to the set
         with self._search_lock:
-            result_list = self._search_results.get(find_response.name)
+            result_list = self._search_results.get(not_found_response.name)
             if result_list is not None:
-                result_list.append(find_response)
-        self._logger.debug("NotFound | Did not find file %s with digest %.8s, peer %s", provider_ip)
+                result_list.append(not_found_response)
+        self._logger.debug("NotFound | Did not find file %s with optional digest %.8s, peer %s",
+                           provider_ip,
+                           not_found_response.name,
+                           not_found_response.digest)
 
     def remove_peer(self, peer_ip):
         with self._known_peers_lock:
-            return self.__known_peers.pop(peer_ip)
+            return self._known_peers.pop(peer_ip)
 
     def _alive_agent(self):
         """
@@ -271,9 +278,9 @@ class UdpController:
         """
         now = datetime.datetime.now()
         with self._known_peers_lock:
-            peers = self.__known_peers
+            peers = self._known_peers
             for peer_ip in list(peers.keys()):
-                diff = now - peers[peer_ip]['last_updated']
+                diff = now - peers[peer_ip].last_updated
                 if diff.total_seconds() > 30:
                     self._logger.info("Removing peer %s because of inactivity", peer_ip)
                     peers.pop(peer_ip)  # delete peer from the list

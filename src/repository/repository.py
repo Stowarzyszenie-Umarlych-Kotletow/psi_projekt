@@ -96,9 +96,12 @@ class Repository:
                     "This file is already in the repository"
                 )
 
+            filesize = os.path.getsize(path)
+
             data = self.__update_metadata(
                 FileMetadata(
                     dict(
+                        size=filesize,
                         name=filename,
                         path=path,
                         status=FileStatus.READY

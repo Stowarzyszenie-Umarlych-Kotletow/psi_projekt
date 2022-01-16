@@ -13,6 +13,7 @@ from file_transfer.main import new_loop, in_background
 from file_transfer.server import ServerHandler
 from repository.file_metadata import FileMetadata
 from repository.repository import NotFoundError, Repository
+from udp.peer import Peer
 from udp.udp_controller import UdpController
 
 
@@ -150,7 +151,7 @@ class Controller:
     def known_peers(self):
         return self._udp_controller.known_peers
 
-    def get_peer_by_ip(self, ip) -> "TODO":
+    def get_peer_by_ip(self, ip) -> Peer:
         return self._udp_controller.get_peer_by_ip(ip)
 
     async def search_file(self, file_name: str = None, file_hash: str = None) -> dict:
@@ -186,7 +187,7 @@ class Controller:
         # TODO: refresh state?
 
     def add_file(self, path):
-        self._repo.add_file(path)
+        return self._repo.add_file(path)
 
     @property
     def state(self):
