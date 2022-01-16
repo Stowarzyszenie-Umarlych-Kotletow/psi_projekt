@@ -22,7 +22,7 @@ class UdpSocket:
     def __del__(self):
         self._socket.close()
 
-    def start(self, timeout=None):
+    def start(self):
         self._t_queue_popper.start()
         self._t_listener.start()
 
@@ -44,8 +44,6 @@ class UdpSocket:
         try:
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self._socket.bind(self._address)
-            if DEBUG:
-                print(f"Initialized UDP listener on {self._address[0]}:{self._address[1]}")
 
         except socket.error as e:
             sys.stderr.write(f"[ERROR] Socket failed: {e.strerror}\n")
@@ -58,8 +56,6 @@ class UdpSocket:
             if address[0] in all_ip4_addresses():
                 return self._receive()
         num_bytes = len(data)
-        if DEBUG:
-            print(f"Received {num_bytes} bytes from {address}: {data}")
 
         for callback in self._receive_callbacks:
             callback(data, address)

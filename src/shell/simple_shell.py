@@ -2,8 +2,7 @@ import asyncio
 import random
 from cmd import Cmd
 from typing import List, Dict
-
-from shell.controller import FileStateContext
+from shell.controller import FileStateContext, Controller
 from udp.found_response import FoundResponse
 from common.config import (
     MAX_FILENAME_LENGTH,
@@ -67,9 +66,9 @@ def parse_responses(responses: Dict[str, List[FoundResponse]]):
 
 
 class SimpleShell(Cmd):
-    def __init__(self, controller):
+    def __init__(self, controller: Controller):
         super().__init__()
-        self._controller = controller
+        self._controller: Controller = controller
 
     prompt = "Ü> "
     intro = "Welcome to Überfreishare! Type ? to list commands"
@@ -82,7 +81,7 @@ class SimpleShell(Cmd):
 
     def do_list_peers(self, inp):
         """show list of known peers."""
-        print(parse_peers(self._controller.get_peers()), end="")
+        print(parse_peers(self._controller.known_peers), end="")
 
     def do_status(self, inp):
         """display program status."""
@@ -132,7 +131,7 @@ class SimpleShell(Cmd):
             target_digest = list(responses.keys())[provider_id]
         response: FoundResponse = random.choice(responses[target_digest])
         target_ip = response.provider_ip
-        peer = self._controller.get_peer(target_ip)
+        peer = self._controller.get_peer_by_ip(target_ip)
         target_port = peer['tcp_port']
         self._controller.schedule_download(response.name, response.digest, 0, (target_ip, target_port))
 

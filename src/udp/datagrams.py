@@ -11,15 +11,18 @@ class Datagram:
         self._header: HeaderStruct = HeaderStruct(message_type)
         self._message = None
 
-    def get_header(self) -> HeaderStruct:
+    @property
+    def header(self) -> HeaderStruct:
         return self._header
 
+    @property
     @abstractmethod
-    def get_message(self):
+    def message(self):
         pass
 
-    def get_message_type(self) -> MessageType:
-        return self._header.get_message_type()
+    @property
+    def message_type(self) -> MessageType:
+        return self._header.message_type
 
     @staticmethod
     def msg_type_to_datagram(message_type):
@@ -36,8 +39,8 @@ class Datagram:
 
     @staticmethod
     def _msg_type_from_datagram_bytes(datagram_bytes):
-        header = HeaderStruct.from_bytes(datagram_bytes)
-        message_type = header.get_message_type()
+        header: HeaderStruct = HeaderStruct.from_bytes(datagram_bytes)
+        message_type = header.message_type
         return message_type
 
     @classmethod
@@ -53,9 +56,7 @@ class Datagram:
             message_type = cls._msg_type_from_datagram_bytes(datagram_bytes)
             if cls.msg_type_to_datagram(message_type) != cls:
                 raise InvalidHeaderException(f"Message id {message_type} does not match cls {cls}")
-        except InvalidHeaderException as err:
-            # if DEBUG:
-            #     print(err)
+        except InvalidHeaderException:
             return None
 
         # shift datagram_bytes by header size to message_bytes
@@ -66,9 +67,10 @@ class Datagram:
         message_struct = message_struct_cls.from_bytes(message_bytes)
         return cls(message_struct)
 
+    @property
     def to_bytes(self) -> bytes:
-        header_bytes = self.get_header().to_bytes()
-        message_bytes = self.get_message().to_bytes()
+        header_bytes = self.header.to_bytes
+        message_bytes = self.message.to_bytes
         return header_bytes + message_bytes
 
 
@@ -77,7 +79,8 @@ class HelloDatagram(Datagram):
         super().__init__(MessageType.HELLO)
         self._message: HelloStruct = hello_struct
 
-    def get_message(self) -> HelloStruct:
+    @property
+    def message(self) -> HelloStruct:
         return self._message
 
 
@@ -86,7 +89,8 @@ class HereDatagram(Datagram):
         super().__init__(MessageType.HERE)
         self._message: HereStruct = here_struct
 
-    def get_message(self) -> HereStruct:
+    @property
+    def message(self) -> HereStruct:
         return self._message
 
 
@@ -95,7 +99,8 @@ class FindDatagram(Datagram):
         super().__init__(MessageType.FIND)
         self._message: FileDataStruct = find_struct
 
-    def get_message(self) -> FileDataStruct:
+    @property
+    def message(self) -> FileDataStruct:
         return self._message
 
 
@@ -104,7 +109,8 @@ class FoundDatagram(Datagram):
         super().__init__(MessageType.FOUND)
         self._message: FileDataStruct = found_struct
 
-    def get_message(self) -> FileDataStruct:
+    @property
+    def message(self) -> FileDataStruct:
         return self._message
 
 
@@ -113,5 +119,6 @@ class NotFoundDatagram(Datagram):
         super().__init__(MessageType.NOTFOUND)
         self._message: FileDataStruct = notfound_struct
 
-    def get_message(self) -> FileDataStruct:
+    @property
+    def message(self) -> FileDataStruct:
         return self._message

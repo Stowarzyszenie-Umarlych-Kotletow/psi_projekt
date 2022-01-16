@@ -2,19 +2,18 @@ import asyncio
 import logging
 import random
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional, Tuple, Dict
 
 from common.config import TCP_PORT
 from file_transfer.client import ClientHandler
+from file_transfer.context import FileConsumerContext, FileProviderContext
 from file_transfer.exceptions import MessageError
-from file_transfer.mock import FileInfo
+from file_transfer.main import new_loop, in_background
 from file_transfer.server import ServerHandler
 from repository.file_metadata import FileMetadata
 from repository.repository import NotFoundError, Repository
 from udp.udp_controller import UdpController
-from file_transfer.main import new_loop, in_background
-from concurrent.futures import Future, ThreadPoolExecutor
-from file_transfer.context import FileConsumerContext, FileProviderContext
 
 
 class FileStateContext:
@@ -125,7 +124,6 @@ class Controller:
                         self._logger.warning("Invalidating file %s", meta.name)
                         self._executor.submit(self._repo.change_state, meta.name, 'INVALID')
 
-
     async def retry_download(self, name: str):
         self._logger.info("Retrying file %s", name)
         meta = self.get_file(name)
@@ -135,7 +133,7 @@ class Controller:
             self._logger.warning("Cannot find hosts to resume file %s", name)
             return
         response = random.choice(search_res[meta.digest])
-        peer = self._udp_controller.get_peer(response.provider_ip)
+        peer = self._udp_controller.get_peer_by_ip(response.provider_ip)
         peer_port = peer['tcp_port']
         await self._download_from(meta, (response.provider_ip, peer_port))
 
@@ -148,11 +146,12 @@ class Controller:
         self._udp_controller.stop()
         # TODO: handle tcp
 
-    def get_peers(self):
-        return self._udp_controller.get_peers()
+    @property
+    def known_peers(self):
+        return self._udp_controller.known_peers
 
     def get_peer(self, ip) -> "TODO":
-        return self._udp_controller.get_peer(ip)
+        return self._udp_controller.get_peer_by_ip(ip)
 
     async def search_file(self, file_name: str = None, file_hash: str = None) -> dict:
         return await self._udp_controller.search(file_name, file_hash)
@@ -188,4 +187,3 @@ class Controller:
 
     def add_file(self, path):
         self._repo.add_file(path)
-
