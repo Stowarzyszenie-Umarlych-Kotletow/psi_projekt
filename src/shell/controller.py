@@ -13,6 +13,7 @@ from file_transfer.main import new_loop, in_background
 from file_transfer.server import ServerHandler
 from repository.file_metadata import FileMetadata
 from repository.repository import NotFoundError, Repository
+from udp.found_response import FoundResponse
 from udp.peer import Peer
 from udp.udp_controller import UdpController
 
@@ -158,7 +159,8 @@ class Controller:
     def get_peer_by_ip(self, ip) -> Peer:
         return self._udp_controller.get_peer_by_ip(ip)
 
-    async def search_file(self, file_name: str = None, file_hash: str = None) -> dict:
+    async def search_file(self, file_name: str = None, file_hash: str = None) -> Dict[str, List[FoundResponse]]:
+        # todo check if file with the same name is not saved in the library
         return await self._udp_controller.search(file_name, file_hash)
 
     def _get_file_state(self, name: str) -> FileStateContext:
