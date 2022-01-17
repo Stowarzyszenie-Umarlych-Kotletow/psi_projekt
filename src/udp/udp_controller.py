@@ -54,19 +54,16 @@ class UdpController:
         self._unicast_socket.add_receive_callback(self.found_callback)
         self._unicast_socket.add_receive_callback(self.not_found_callback)
 
-    async def start(self):
+    def start(self):
         self._loop = new_loop()
 
         # start threads
         self._t_broadcast_alive.start()
 
         # start sockets (and their threads)
-        asyncio.run_coroutine_threadsafe(
-            self._broadcast_socket.start(), self._loop
-        )
-        asyncio.run_coroutine_threadsafe(
-            self._unicast_socket.start(), self._loop
-        )
+        self._broadcast_socket.start()
+
+        self._unicast_socket.start()
 
         # broadcast hello message
         self._broadcast_socket.send(HelloDatagram().to_bytes)
@@ -192,9 +189,12 @@ class UdpController:
                 unicast_port=here_struct.unicast_port,
                 last_updated=datetime.datetime.now(),
             )
+            self._logger.debug(
+                "Here | Received HERE message from peer %s:%s", address[0], address[1]
+            )
         if is_new:
             self._logger.debug(
-                "Here | Discovered peer %s with TCP port %s", address[0], address[1]
+                "Here | Discovered peer %s:%s", address[0], address[1]
             )
 
     def find_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):

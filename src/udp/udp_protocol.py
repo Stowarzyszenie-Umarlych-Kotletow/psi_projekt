@@ -1,21 +1,24 @@
+import asyncio
 import queue
 import socket
 import sys
+from asyncio import Future
 from threading import Thread
 from typing import Tuple, Callable
 
+from common.config import *
 from common.tasks import new_loop
 from common.utils import all_ip4_addresses
-from common.config import *
-import asyncio
 
 
-class SimpleProtocol(asyncio.DatagramProtocol):
-    def __init__(self, receive_callbacks):
+class AsyncioDatagramProtocol(asyncio.DatagramProtocol):
+    def __init__(self, on_connection_lost, receive_callbacks):
         self._receive_callbacks = receive_callbacks
+        self.on_connection_lost = on_connection_lost
+        self.transport = None
         super().__init__()
 
-    def connection_made(self, transport) -> "Used by asyncio":
+    def connection_made(self, transport):
         self.transport = transport
 
     def datagram_received(self, data, address):
@@ -27,12 +30,15 @@ class SimpleProtocol(asyncio.DatagramProtocol):
         for callback in self._receive_callbacks:
             callback(data, address)
 
+    def connection_lost(self, exc):
+        self.on_connection_lost.set_result(True)
+
 
 class UdpSocket:
     def __init__(
-        self,
-        address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT),
-        buffer_size: int = UDP_BUFFER_SIZE,
+            self,
+            address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT),
+            buffer_size: int = UDP_BUFFER_SIZE,
     ):
         self._buffer_size = buffer_size
         self._address = address
@@ -40,23 +46,37 @@ class UdpSocket:
         self._init_socket()
         self._send_queue = queue.Queue()
         self._t_queue_popper = Thread(target=self._q_popper, daemon=True)
-        self._t_listener = Thread(target=self._listen, daemon=True)
         self._receive_callbacks = []
         self._loop: asyncio.AbstractEventLoop = None
 
     def __del__(self):
         self._socket.close()
 
-    async def start(self):
-        self._loop = asyncio.get_event_loop()
-
-        await self._loop.create_datagram_endpoint(lambda: SimpleProtocol(self._receive_callbacks),
-                                                  sock=self._socket)
+    def start(self):
+        self._loop = new_loop()
         self._t_queue_popper.start()
-        self._loop.run_forever()
+
+        self._server_task: Future = asyncio.run_coroutine_threadsafe(
+            self._serve_udp(), self._loop
+        )
+
+    async def _serve_udp(self):
+        on_connection_lost = self._loop.create_future()
+        transport, protocol = await self._loop.create_datagram_endpoint(
+            lambda: AsyncioDatagramProtocol(
+                on_connection_lost=on_connection_lost,
+                receive_callbacks=self._receive_callbacks
+            ),
+            sock=self._socket
+        )
+        try:
+            await protocol.on_connection_lost
+        finally:
+            transport.close()
+            self._socket.close()
 
     def stop(self):
-        pass
+        self._loop.stop()
 
     def add_receive_callback(self, callback: Callable[[bytes, Tuple[str, int]], None]):
         self._receive_callbacks.append(callback)
@@ -77,21 +97,6 @@ class UdpSocket:
         except socket.error as e:
             sys.stderr.write(f"[ERROR] Socket failed: {e.strerror}\n")
             exit(1)
-
-    def _receive(self):
-        data, address = self._socket.recvfrom(self._buffer_size)
-        if BROADCAST_OMIT_SELF:
-            # drop broadcasts coming from us
-            if address[0] in all_ip4_addresses():
-                return self._receive()
-        num_bytes = len(data)
-
-        for callback in self._receive_callbacks:
-            callback(data, address)
-
-    def _listen(self):
-        while True:
-            self._receive()
 
     def _q_popper(self):
         while True:
@@ -117,7 +122,7 @@ class UdpSocket:
 
 class BroadcastSocket(UdpSocket):
     def __init__(
-        self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE
+            self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE
     ):
         super().__init__(address, buffer_size)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
