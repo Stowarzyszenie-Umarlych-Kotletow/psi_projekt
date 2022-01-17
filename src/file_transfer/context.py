@@ -1,10 +1,16 @@
 from typing import Tuple, Optional
+from common.models import AbstractController, FileMetadata
 
 from file_transfer.models import FileProvider
-from file_transfer.mock import FileInfo, Controller
+
 
 class FileContext(FileProvider):
-    def __init__(self, controller: Controller, file: FileInfo, endpoint: Optional[Tuple[str, int]]) -> None:
+    def __init__(
+        self,
+        controller: AbstractController,
+        file: FileMetadata,
+        endpoint: Optional[Tuple[str, int]],
+    ) -> None:
         self._controller = controller
         self._file = file
         self._should_stop = False
@@ -19,7 +25,7 @@ class FileContext(FileProvider):
         return self._endpoint
 
     @property
-    def file(self) -> FileInfo:
+    def file(self) -> FileMetadata:
         return self._file
 
     def stop(self):
@@ -31,6 +37,7 @@ class FileContext(FileProvider):
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
+
 class FileConsumerContext(FileContext):
     def __enter__(self):
         self._controller.add_consumer(self)
@@ -38,6 +45,7 @@ class FileConsumerContext(FileContext):
 
     def __exit__(self, exc_type, exc_value, tb):
         self._controller.remove_consumer(self)
+
 
 class FileProviderContext(FileContext):
     def __enter__(self):

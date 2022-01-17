@@ -24,23 +24,25 @@ class Struct:
         pass
 
     @classmethod
-    def get_format(cls):
+    @property
+    def format(cls):
         return cls.FORMAT
 
     @classmethod
-    def get_struct_size(cls):
+    @property
+    def struct_size(cls):
         return struct.calcsize(cls.FORMAT)
 
     @classmethod
     def shift_bytes_by_struct_size(cls, struct_bytes):
-        return struct_bytes[cls.get_struct_size():]
+        return struct_bytes[cls.struct_size:]
 
     @classmethod
     def from_bytes(cls, struct_bytes):
         """
         returns class created from retrieved struct
         """
-        cut_bytes = struct_bytes[0:cls.get_struct_size()]
+        cut_bytes = struct_bytes[0:cls.struct_size]
         unpacked = struct.unpack(cls.FORMAT, cut_bytes)
         return cls(*unpacked)
 
@@ -67,18 +69,23 @@ class HeaderStruct(Struct):
         self._proto_version: int = proto_version
         self._magic_number: int = magic_number
 
-    def get_proto_version(self) -> int:
+    @property
+    def proto_version(self) -> int:
         return self._proto_version
 
-    def get_magic_number(self) -> int:
+    @property
+    def magic_number(self) -> int:
         return self._magic_number
 
-    def get_message_id(self) -> int:
+    @property
+    def message_id(self) -> int:
         return self._message_id
 
-    def get_message_type(self) -> MessageType:
+    @property
+    def message_type(self) -> MessageType:
         return MessageType(self._message_id)
 
+    @property
     def to_bytes(self) -> bytes:
         return struct.pack(self.FORMAT, self._magic_number, self._proto_version, self._message_id)
 
@@ -88,7 +95,7 @@ class HeaderStruct(Struct):
         we must overload that method,
         because the arguments are in the different order than struct data
         """
-        cut_bytes = struct_bytes[0:cls.get_struct_size()]
+        cut_bytes = struct_bytes[0:cls.struct_size]
         magick_number, proto_version, message_id = struct.unpack(cls.FORMAT, cut_bytes)
 
         if magick_number != MAGIC_NUMBER:
@@ -107,7 +114,8 @@ class HelloStruct(Struct):
     def __init__(self):
         super().__init__()
 
-    def to_bytes(self):
+    @property
+    def to_bytes(self) -> bytes:
         return struct.pack(self.FORMAT)
 
 
@@ -119,20 +127,23 @@ class HereStruct(Struct):
         self._unicast_port = unicast_port
         self._tcp_port = tcp_port
 
-    def get_tcp_port(self):
+    @property
+    def tcp_port(self) -> int:
         return self._tcp_port
 
-    def get_unicast_port(self):
+    @property
+    def unicast_port(self) -> int:
         return self._unicast_port
 
-    def to_bytes(self):
+    @property
+    def to_bytes(self) -> bytes:
         return struct.pack(self.FORMAT, self._unicast_port, self._tcp_port)
 
 
 class FileDataStruct(Struct):
-    FORMAT = f"!{str(MAX_FILENAME_LENGTH + 1)}p64s"  # first byte of name contains size of string
+    FORMAT = f"!{str(MAX_FILENAME_LENGTH + 1)}p64sQ"  # first byte of name contains size of string
 
-    def __init__(self, file_name, file_hash, file_size:int=0):
+    def __init__(self, file_name, file_hash, file_size: int = 0):
         super().__init__()
         if type(file_name) == str:
             file_name = bytes(file_name, ENCODING)
@@ -143,7 +154,6 @@ class FileDataStruct(Struct):
         self._file_name: bytes = file_name
         self._file_hash: bytes = file_hash
         self._file_size: int = file_size
-
 
     @property
     def file_digest_encoded(self) -> bytes:
@@ -156,7 +166,7 @@ class FileDataStruct(Struct):
     @property
     def file_digest(self) -> str:
         if self.digest_is_empty:
-            return None # TODO: BRO PLS FIX ME
+            return ""  # TODO: BRO PLS FIX ME
         return str(self._file_hash, ENCODING)
 
     @property
@@ -175,5 +185,6 @@ class FileDataStruct(Struct):
     def name_is_empty(self):
         return len(self.file_name) == 0
 
+    @property
     def to_bytes(self):
-        return struct.pack(self.FORMAT, self._file_name, self._file_hash)
+        return struct.pack(self.FORMAT, self._file_name, self._file_hash, self._file_size)

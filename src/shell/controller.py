@@ -2,19 +2,20 @@ import asyncio
 import logging
 import random
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional, Tuple, Dict
 
-from common.config import TCP_PORT
+from common.config import TCP_PORT, MAX_FILENAME_LENGTH
+from common.models import AbstractController, FileMetadata, FileStatus
 from file_transfer.client import ClientHandler
-from file_transfer.exceptions import MessageError
-from file_transfer.mock import FileInfo
-from file_transfer.server import ServerHandler
-from repository.file_metadata import FileMetadata
-from repository.repository import NotFoundError, Repository
-from udp.udp_controller import UdpController
-from file_transfer.main import new_loop, in_background
-from concurrent.futures import Future, ThreadPoolExecutor
 from file_transfer.context import FileConsumerContext, FileProviderContext
+from common.exceptions import FileDuplicateException, LogicError, FileNameTooLongException
+from common.tasks import new_loop, in_background
+from file_transfer.server import ServerHandler
+from repository.repository import NotFoundError, Repository
+from udp.found_response import FoundResponse
+from udp.peer import Peer
+from udp.udp_controller import UdpController
 
 
 class FileStateContext:
@@ -41,29 +42,44 @@ class FileStateContext:
         with self._lock:
             provider = self._provider
             if provider and value:
-                raise MessageError("Provider already exists")
+                raise LogicError("Provider already exists")
             self._provider = value
 
     def add_consumer(self, context):
         if not self.file_meta.can_share:
             raise NotFoundError("File is not accessible")
-        self._consumers.append(context)
+        with self._lock:
+            self._consumers.append(context)
 
     def remove_consumer(self, context):
-        self._consumers.remove(context)
+        with self._lock:
+            self._consumers.remove(context)
+
+    def clear(self):
+        with self._lock:
+            if self._provider:
+                self._provider.stop()
+            for consumer in self._consumers:
+                consumer.stop()
 
 
-class Controller:
+class Controller(AbstractController):
     def __init__(self):
         self._udp_controller = UdpController(self)
         self._state: Dict[str, FileStateContext] = {}
         self._repo = Repository()
-        self._loop = new_loop()
+        self._loop: asyncio.AbstractEventLoop = None
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor()
         self._logger = logging.getLogger("Controller")
 
     def start(self):
+        self._logger.info("Starting...")
+
+        self._loop = new_loop()
+        self._repo.load()
+        self._load_from_repo()
+
         self._udp_controller.start()
         self._server_task: Future = asyncio.run_coroutine_threadsafe(
             self._serve_tcp(), self._loop
@@ -71,18 +87,21 @@ class Controller:
         self._monitor_task: Future = asyncio.run_coroutine_threadsafe(
             self._monitor_files(), self._loop
         )
-        self._repo.load()
-        self._load_from_repo()
+
+        self._logger.info("Ready")
 
     def _load_from_repo(self):
         repo_files = self._repo.get_files()
-        for (name, meta) in repo_files.items():
+        for meta in repo_files.values():
             self._add_file(meta)
 
     def _add_file(self, meta: FileMetadata):
-        # TODO: Collisions
         self._logger.debug("Adding file %s", meta.name)
-        self._state[meta.name] = FileStateContext(meta)
+        with self._lock:
+            if meta.name in self._state:
+                self._logger.warning("Attempted to add duplicate file %s", meta.name)
+                raise FileDuplicateException(f"File '{self.name}' already exists")
+            self._state[meta.name] = FileStateContext(meta)
 
     async def _handle_client(self, reader, writer):
         handler = ServerHandler(self)
@@ -90,19 +109,24 @@ class Controller:
 
     async def _download_from(self, file: FileMetadata, endpoint: Tuple[str, int]):
         try:
-            self._logger.info("Starting download of file %s from %s", file.name, endpoint[0])
+            self._logger.info(
+                "Starting download of file %s from %s", file.name, endpoint[0]
+            )
             streams = await asyncio.open_connection(*endpoint)
-            handler = ClientHandler(self, file, endpoint)
-            await handler.handle_connection(*streams)
+            with FileProviderContext(self, file, endpoint) as context:
+                handler = ClientHandler(context)
+                await handler.handle_connection(*streams)
 
-            await self._loop.run_in_executor(None, self._repo.update_stat, file.name)
-            # TODO: update file
-            self._logger.info("Download of %s completed", file.name)
-            if file.digest != file.current_digest or file.size != file.current_size:
-                raise MessageError("Invalid file download")
-            await self._loop.run_in_executor(None, self._repo.change_state, file.name, 'READY')
+                await self._loop.run_in_executor(None, self._repo.update_stat, file.name)
+
+                self._logger.info("Download of %s completed", file.name)
+                if not file.is_valid:
+                    raise LogicError("Invalid file download")
+                await self._loop.run_in_executor(
+                    None, self._repo.change_state, file.name, "READY"
+                )
         except Exception as exc:
-            self._logger.warning("Download of %s failed", exc_info=exc)
+            self._logger.warning("Download of %s failed", file.name, exc_info=exc)
             self._udp_controller.remove_peer(endpoint[0])
 
     async def _serve_tcp(self):
@@ -111,20 +135,29 @@ class Controller:
             await server.serve_forever()
 
     async def _monitor_files(self):
+        def process_file(file: FileStateContext):
+            meta = file.file_meta
+            if meta.status == FileStatus.DOWNLOADING and not file.provider:
+                if (
+                    meta.current_size >= meta.size
+                    and meta.digest != meta.current_digest
+                ):
+                    self._logger.warning("Truncating download %s", meta.name)
+                    meta.current_size = 0
+                in_background(
+                    asyncio.run_coroutine_threadsafe(
+                        self.retry_download(meta.name), self._loop
+                    )
+                )
+            elif meta.status == FileStatus.READY and not meta.is_valid:
+                self._logger.warning("Invalidating file %s", meta.name)
+                self._executor.submit(self._repo.change_state, meta.name, "INVALID")
+
         while True:
             await asyncio.sleep(5)
             with self._lock:
                 for file in self._state.values():
-                    meta = file.file_meta
-                    if meta.status == 'downloading' and not file.provider:
-                        if meta.current_size >= meta.size and meta.digest != meta.current_digest:
-                            self._logger.warning("Truncating download %s", meta.name)
-                            meta.current_size = 0
-                        in_background(asyncio.run_coroutine_threadsafe(self.retry_download(meta.name), self._loop))
-                    elif meta.status == 'ready' and not meta.is_valid:
-                        self._logger.warning("Invalidating file %s", meta.name)
-                        self._executor.submit(self._repo.change_state, meta.name, 'INVALID')
-
+                    process_file(file)
 
     async def retry_download(self, name: str):
         self._logger.info("Retrying file %s", name)
@@ -135,26 +168,43 @@ class Controller:
             self._logger.warning("Cannot find hosts to resume file %s", name)
             return
         response = random.choice(search_res[meta.digest])
-        peer = self._udp_controller.get_peer(response.provider_ip)
-        peer_port = peer['tcp_port']
+        peer = self._udp_controller.get_peer_by_ip(response.provider_ip)
+        peer_port = peer.tcp_port
         await self._download_from(meta, (response.provider_ip, peer_port))
 
-    def schedule_download(self, name: str, digest: Optional[str], size: int, endpoint: Tuple[str, int]):
+    def schedule_download(
+        self, name: str, digest: Optional[str], size: int, endpoint: Tuple[str, int]
+    ):
         meta = self._repo.init_meta(name, digest, size)
         self._add_file(meta)
-        in_background(asyncio.run_coroutine_threadsafe(self._download_from(meta, endpoint), self._loop))
+        in_background(
+            asyncio.run_coroutine_threadsafe(
+                self._download_from(meta, endpoint), self._loop
+            )
+        )
 
     def stop(self):
-        self._udp_controller.stop()
-        # TODO: handle tcp
+        with self._lock:
+            for state in self._state.values():
+                state.clear()
+            self._state = {}
+            self._udp_controller.stop()
+            self._loop.stop()
 
-    def get_peers(self):
-        return self._udp_controller.get_peers()
+    @property
+    def known_peers(self):
+        return self._udp_controller.known_peers
 
-    def get_peer(self, ip) -> "TODO":
-        return self._udp_controller.get_peer(ip)
+    @property
+    def known_peers_list(self):
+        return self._udp_controller.known_peers_list
 
-    async def search_file(self, file_name: str = None, file_hash: str = None) -> dict:
+    def get_peer_by_ip(self, ip) -> Peer:
+        return self._udp_controller.get_peer_by_ip(ip)
+
+    async def search_file(
+        self, file_name: str = None, file_hash: str = None
+    ) -> Dict[str, List[FoundResponse]]:
         return await self._udp_controller.search(file_name, file_hash)
 
     def _get_file_state(self, name: str) -> FileStateContext:
@@ -164,6 +214,8 @@ class Controller:
             raise NotFoundError(f"File '{name}' not found in repository")
 
     def get_file(self, name) -> FileMetadata:
+        if len(name) > MAX_FILENAME_LENGTH:
+            raise FileNameTooLongException(f"File name exceeds {MAX_FILENAME_LENGTH} characters")
         return self._get_file_state(name).file_meta
 
     def add_consumer(self, context):
@@ -179,13 +231,23 @@ class Controller:
         self._get_file_state(
             context.file.name
         ).file_meta.current_size = bytes_downloaded
-        # TODO: yeah..
 
     def remove_provider(self, context, exc_value: Optional[Exception] = None):
         state = self._get_file_state(context.file.name)
         state.provider = None
-        # TODO: refresh state?
 
     def add_file(self, path):
-        self._repo.add_file(path)
+        meta = self._repo.add_file(path)
+        self._add_file(meta)
+        return meta
 
+    def remove_file(self, name):
+        with self._lock:
+            state = self._get_file_state(name)
+            self._repo.remove_file(name)
+            state.clear()
+            del self._state[name]
+
+    @property
+    def state(self):
+        return self._state

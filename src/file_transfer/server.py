@@ -2,11 +2,12 @@ from cmath import log
 import logging
 from uuid import UUID, uuid4
 from common.config import DIGEST_ALG
-from file_transfer.mock import Controller, FileInfo
 from asyncio.streams import StreamReader, StreamWriter
 from typing import *
+from common.models import AbstractController, FileMetadata
 from file_transfer.enums import ProtoMethod, ProtoStatusCode
-from file_transfer.exceptions import InvalidRangeError, ParseError, UnsupportedError
+from file_transfer.exceptions import InvalidRangeError
+from common.exceptions import ParseError, UnsupportedError
 from file_transfer.models import (
     ByteRange,
     DigestContainer,
@@ -15,15 +16,17 @@ from file_transfer.models import (
     Response,
 )
 from file_transfer.context import FileConsumerContext
-from logging import Logger
+
 
 class ServerHandler:
-    def __init__(self, controller: Controller) -> None:
+    def __init__(self, controller: AbstractController) -> None:
         self._controller = controller
         self._id = uuid4()
         self._logger = logging.getLogger("ServerHandler")
 
-    def new_consumer(self, file: FileInfo, endpoint: Optional[Tuple[str, int]]) -> FileConsumerContext:
+    def new_consumer(
+        self, file: FileMetadata, endpoint: Optional[Tuple[str, int]]
+    ) -> FileConsumerContext:
         return FileConsumerContext(self._controller, file, endpoint)
 
     async def handle_request(self, request: Request, endpoint: Tuple[str, int]):
@@ -94,7 +97,7 @@ class ServerHandler:
             await write_response(response, include_body=include_body)
 
         except Exception as outerException:
-            self._logger.exception(
+            self._logger.error(
                 "Uncaught exception", exc_info=outerException, extra=log_extra
             )
         finally:

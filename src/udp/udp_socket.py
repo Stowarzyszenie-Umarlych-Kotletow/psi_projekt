@@ -9,7 +9,11 @@ from common.config import *
 
 
 class UdpSocket:
-    def __init__(self, address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT), buffer_size: int = UDP_BUFFER_SIZE):
+    def __init__(
+        self,
+        address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT),
+        buffer_size: int = UDP_BUFFER_SIZE,
+    ):
         self._buffer_size = buffer_size
         self._address = address
         self._socket = None
@@ -22,7 +26,7 @@ class UdpSocket:
     def __del__(self):
         self._socket.close()
 
-    def start(self, timeout=None):
+    def start(self):
         self._t_queue_popper.start()
         self._t_listener.start()
 
@@ -44,8 +48,6 @@ class UdpSocket:
         try:
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self._socket.bind(self._address)
-            if DEBUG:
-                print(f"Initialized UDP listener on {self._address[0]}:{self._address[1]}")
 
         except socket.error as e:
             sys.stderr.write(f"[ERROR] Socket failed: {e.strerror}\n")
@@ -58,8 +60,6 @@ class UdpSocket:
             if address[0] in all_ip4_addresses():
                 return self._receive()
         num_bytes = len(data)
-        if DEBUG:
-            print(f"Received {num_bytes} bytes from {address}: {data}")
 
         for callback in self._receive_callbacks:
             callback(data, address)
@@ -91,6 +91,8 @@ class UdpSocket:
 
 
 class BroadcastSocket(UdpSocket):
-    def __init__(self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE):
+    def __init__(
+        self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE
+    ):
         super().__init__(address, buffer_size)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

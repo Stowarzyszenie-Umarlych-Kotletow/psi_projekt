@@ -1,9 +1,8 @@
 from typing import Tuple, Optional
-from unittest.mock import patch
 from file_transfer.enums import ProtoMethod, KnownHeader, ProtoStatusCode
 import re
 
-from file_transfer.exceptions import ParseError
+from common.exceptions import ParseError
 
 
 def rstrip_once(str: str) -> str:
