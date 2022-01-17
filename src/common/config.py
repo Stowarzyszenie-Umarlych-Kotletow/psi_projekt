@@ -10,8 +10,6 @@ TCP_PORT = 13371
 BROADCAST_IP = '<broadcast>'  # default
 # BROADCAST_IP = '192.168.80.255'
 UNICAST_IP = '0.0.0.0'
-FINDING_TIME = 2
-SEARCH_RETRIES = 2
 
 # Development
 DEBUG = True
@@ -24,3 +22,7 @@ MAX_FILENAME_LENGTH = 27
 MOCK_CONTROLLER_PATH = os.getcwd()
 DIGEST_ALG = 'sha256'
 FINGERPRINT_LENGTH = 10
+FINDING_TIME = 2
+SEARCH_RETRIES = 2
+BROADCAST_DROP_CHANCE = 0  # chance of dropping broadcast datagram in %
+BROADCAST_DROP_IN_ROW = 3  # number of broadcast datagrams dropped in a row
