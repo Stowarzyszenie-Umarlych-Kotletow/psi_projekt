@@ -18,7 +18,7 @@ from udp.datagrams import (
 )
 from udp.found_response import FoundResponse
 from udp.structs import FileDataStruct, HereStruct
-from udp.udp_socket import *
+from udp.udp_protocol import *
 from udp.peer import Peer
 
 
@@ -36,6 +36,7 @@ class UdpController:
         self._unicast_socket = UdpSocket()
         self._controller = controller
         self._add_receive_callbacks()
+        self._loop: asyncio.AbstractEventLoop = None
 
         self._t_broadcast_alive = Thread(target=self._alive_agent, daemon=True)
 
@@ -53,13 +54,19 @@ class UdpController:
         self._unicast_socket.add_receive_callback(self.found_callback)
         self._unicast_socket.add_receive_callback(self.not_found_callback)
 
-    def start(self):
+    async def start(self):
+        self._loop = new_loop()
+
         # start threads
         self._t_broadcast_alive.start()
 
         # start sockets (and their threads)
-        self._broadcast_socket.start()
-        self._unicast_socket.start()
+        asyncio.run_coroutine_threadsafe(
+            self._broadcast_socket.start(), self._loop
+        )
+        asyncio.run_coroutine_threadsafe(
+            self._unicast_socket.start(), self._loop
+        )
 
         # broadcast hello message
         self._broadcast_socket.send(HelloDatagram().to_bytes)

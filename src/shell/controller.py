@@ -80,7 +80,9 @@ class Controller(AbstractController):
         self._repo.load()
         self._load_from_repo()
 
-        self._udp_controller.start()
+        asdf: Future = asyncio.run_coroutine_threadsafe(
+            self._udp_controller.start(), self._loop
+        )
         self._server_task: Future = asyncio.run_coroutine_threadsafe(
             self._serve_tcp(), self._loop
         )
