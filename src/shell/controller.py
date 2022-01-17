@@ -184,6 +184,9 @@ class Controller(AbstractController):
             )
         )
 
+    def is_running(self):
+        return self._loop.is_running()
+
     def stop(self):
         self._logger.info("Stopping daemon...")
         with self._lock:

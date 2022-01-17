@@ -40,13 +40,14 @@ class UdpSocket:
         self._buffer_size = buffer_size
         self._address = address
         self._socket = None
-        self._init_socket()
         self._send_queue = queue.Queue()
         self._receive_callbacks = []
         self._loop: asyncio.AbstractEventLoop = None
         self._transport = None
 
     def start(self):
+        self._init_socket()
+        self._socket.bind(self._address)
         self._loop = new_loop()
         self._server_task: Future = asyncio.run_coroutine_threadsafe(
             self._serve_udp(), self._loop
@@ -63,6 +64,8 @@ class UdpSocket:
 
     def stop(self):
         self._transport.close()
+        self._socket.close()
+        del self._socket
         self._loop.stop()
 
     def add_receive_callback(self, callback: Callable[[bytes, Tuple[str, int]], None]):
@@ -86,16 +89,13 @@ class UdpSocket:
             sys.exit(1)
 
     def _init_socket(self):
-        try:
-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self._socket.bind(self._address)
-        except socket.error as e:
-            sys.stderr.write(f"[ERROR] Socket failed: {e.strerror}\n")
-            exit(1)
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 
 class BroadcastSocket(UdpSocket):
     def __init__(self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE):
         super().__init__(address, buffer_size)
-        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
+    def _init_socket(self):
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

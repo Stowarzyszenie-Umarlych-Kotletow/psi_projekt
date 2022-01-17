@@ -177,7 +177,17 @@ class SimpleShell(Cmd):
             print("Not found: ", e)
 
     def do_stop(self, inp):
-        self._controller.stop()
+        """stop: stop daemon"""
+        if self._controller.is_running():
+            print("Stopping daemon...")
+            self._controller.stop()
+        else:
+            print("Daemon is not running")
 
     def do_start(self, inp):
-        self._controller.start()
+        """start: start daemon"""
+        if not self._controller.is_running():
+            print("Starting daemon...")
+            self._controller.start()
+        else:
+            print("Daemon is already running")

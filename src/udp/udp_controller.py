@@ -40,8 +40,6 @@ class UdpController:
         self._add_receive_callbacks()
         self._loop: asyncio.AbstractEventLoop = None
 
-        # self._broadcast_alive_task = None # todo sprawdzic czy sie wylacza ok
-
         self._known_peers: Dict[str, Peer] = {}
         self._known_peers_lock = threading.Lock()
 
@@ -64,14 +62,13 @@ class UdpController:
         self._broadcast_socket.start()
 
         # start threads
-        # self._broadcast_alive_task: Future = asyncio.run_coroutine_threadsafe(
-        asyncio.run_coroutine_threadsafe(  # todo sprawdzic czy sie wylacza ok
+        asyncio.run_coroutine_threadsafe(
             self._serve_alive_agent(), self._loop
         )
 
         # broadcast hello message
         self._broadcast_socket.send(HelloDatagram().to_bytes)
-        self._logger.info("Started UDP controller")
+        self._logger.debug("Started UDP controller")
 
     def stop(self):
         self._loop.stop()
@@ -173,7 +170,7 @@ class UdpController:
         received_hello_datagram = HelloDatagram.from_bytes(datagram_bytes)
         if received_hello_datagram is None:
             return
-        self._logger.debug("Hello | Discovering new peer %s", address[0])
+        self._logger.debug("Hello | Responding to new peer %s", address[0])
         here_datagram = HereDatagram()
         self._broadcast_socket.send(here_datagram.to_bytes)
 
