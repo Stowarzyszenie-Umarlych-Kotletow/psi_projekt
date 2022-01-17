@@ -17,7 +17,7 @@ class AsyncioDatagramProtocol(asyncio.DatagramProtocol):
         self._logger = logging.getLogger("AsyncioDatagramProtocol")
         self._receive_callbacks = receive_callbacks
         self._broadcast_mode = broadcast_mode
-        self._drop_counter = 3
+        self._drop_counter = 0
         self.transport = None
         super().__init__()
 
@@ -37,6 +37,7 @@ class AsyncioDatagramProtocol(asyncio.DatagramProtocol):
             # drop broadcasts coming from us
             if address[0] in all_ip4_addresses():
                 return
+
         # drop broadcast by chance
         if self._broadcast_mode:
             if self._drop_counter == 0:

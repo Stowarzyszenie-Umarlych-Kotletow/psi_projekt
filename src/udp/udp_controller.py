@@ -121,27 +121,29 @@ class UdpController:
 
         find_struct = FileDataStruct(file_name, file_digest)
         find_datagram = FindDatagram(find_struct)
-        self._broadcast_socket.send(find_datagram.to_bytes)
 
-        # find and found callbacks are now working
-        await asyncio.sleep(FINDING_TIME)
+        missing_peers = set()
 
-        # check if all known peers responded and retry if not
-        missing_peers = get_missing_peers()
-        for retry in range(SEARCH_RETRIES):
+        for retry in range(SEARCH_RETRIES+1):
             if len(missing_peers) != 0:
                 self._logger.info(
-                    "Search | %s peers did not respond, retrying search for file %s with digest %s (%s/%s)",
+                    "Search | %s peers did not respond, retrying search for file %s with optional digest %s (%s/%s)",
                     len(missing_peers),
                     file_name,
                     file_digest,
-                    retry + 1,
+                    retry,
                     SEARCH_RETRIES,
                 )
-                # with self._search_lock:  # we dont want to delete recently found providers
-                #     self._search_results[file_name].clear()
-                self._broadcast_socket.send(find_datagram.to_bytes)
-                await asyncio.sleep(FINDING_TIME)
+            self._broadcast_socket.send(find_datagram.to_bytes)
+
+            # find and found callbacks are now working
+            await asyncio.sleep(FINDING_TIME)
+
+            # check if all known peers responded and retry if not
+            missing_peers = get_missing_peers()
+
+            if len(missing_peers) == 0:
+                break
 
         # delete peers that did not respond
         for peer_ip in missing_peers:
@@ -254,6 +256,7 @@ class UdpController:
         received_found_datagram = FoundDatagram.from_bytes(datagram_bytes)
         if received_found_datagram is None:
             return
+        print("found callback")
 
         provider_ip = address[0]
 
@@ -284,10 +287,12 @@ class UdpController:
         )
 
     def not_found_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
+
         # check if datagram is of type FoundDatagram
         received_not_found_datagram = NotFoundDatagram.from_bytes(datagram_bytes)
         if received_not_found_datagram is None:
             return
+        print("not found callback")
 
         provider_ip = address[0]
 
@@ -310,9 +315,9 @@ class UdpController:
                 result_list.append(not_found_response)
         self._logger.debug(
             "NotFound | Did not find file %s with optional digest %.8s, peer %s",
-            provider_ip,
             not_found_response.name,
             not_found_response.digest,
+            provider_ip
         )
 
     def remove_peer(self, peer_ip):
