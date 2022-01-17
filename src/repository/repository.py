@@ -38,6 +38,7 @@ class Repository:
             self._path = os.path.join(tempfile.gettempdir(), "files")
         else:
             self._path = config["path"]
+        self._path += '/'
         mode = 0o700
         self._lock = Lock()
         if not os.path.isdir(self._path):
