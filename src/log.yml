@@ -32,4 +32,8 @@ loggers:
     handlers:
     - console
     level: DEBUG
+  Repository:
+    handlers:
+    - console
+    level: DEBUG
 version: 1
