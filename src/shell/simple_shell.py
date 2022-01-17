@@ -175,3 +175,9 @@ class SimpleShell(Cmd):
             print(table)
         except Exception as e:
             print("Not found: ", e)
+
+    def do_stop(self, inp):
+        self._controller.stop()
+
+    def do_start(self, inp):
+        self._controller.start()

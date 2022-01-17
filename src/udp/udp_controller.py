@@ -4,8 +4,10 @@ import datetime
 import logging
 import threading
 import time
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
+from common.config import *
+from common.tasks import new_loop
 from common.utils import is_sha256
 from common.exceptions import LogicError
 from common.models import FileMetadata
@@ -18,7 +20,7 @@ from udp.datagrams import (
 )
 from udp.found_response import FoundResponse
 from udp.structs import FileDataStruct, HereStruct
-from udp.udp_protocol import *
+from udp.udp_socket import UdpSocket, BroadcastSocket
 from udp.peer import Peer
 
 
@@ -38,7 +40,7 @@ class UdpController:
         self._add_receive_callbacks()
         self._loop: asyncio.AbstractEventLoop = None
 
-        self._t_broadcast_alive = Thread(target=self._alive_agent, daemon=True)
+        # self._broadcast_alive_task = None # todo sprawdzic czy sie wylacza ok
 
         self._known_peers: Dict[str, Peer] = {}
         self._known_peers_lock = threading.Lock()
@@ -57,21 +59,24 @@ class UdpController:
     def start(self):
         self._loop = new_loop()
 
-        # start threads
-        self._t_broadcast_alive.start()
-
         # start sockets (and their threads)
+        self._unicast_socket.start()
         self._broadcast_socket.start()
 
-        self._unicast_socket.start()
+        # start threads
+        # self._broadcast_alive_task: Future = asyncio.run_coroutine_threadsafe(
+        asyncio.run_coroutine_threadsafe(  # todo sprawdzic czy sie wylacza ok
+            self._serve_alive_agent(), self._loop
+        )
 
         # broadcast hello message
         self._broadcast_socket.send(HelloDatagram().to_bytes)
         self._logger.info("Started UDP controller")
 
     def stop(self):
-        # TODO
-        pass
+        self._loop.stop()
+        self._unicast_socket.stop()
+        self._broadcast_socket.stop()
 
     @property
     def known_peers(self) -> Dict[str, Peer]:
@@ -317,19 +322,18 @@ class UdpController:
         with self._known_peers_lock:
             return self._known_peers.pop(peer_ip)
 
-    def _alive_agent(self):
+    async def _serve_alive_agent(self):
         """
         thread target:
         agent that broadcasts HERE messages every 10 seconds
         and deletes peers older than 30 seconds
         """
         here_bytes = HereDatagram().to_bytes
-
         while True:
             self._logger.debug("Broadcasting HERE message")
             self._broadcast_socket.send(here_bytes)
             self._delete_old_peers()
-            time.sleep(10)
+            await asyncio.sleep(10)
 
     def _delete_old_peers(self):
         """

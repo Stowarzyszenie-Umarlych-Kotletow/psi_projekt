@@ -101,7 +101,7 @@ class Controller(AbstractController):
         with self._lock:
             if meta.name in self._state:
                 self._logger.warning("Attempted to add duplicate file %s", meta.name)
-                raise FileDuplicateException(f"File '{self.name}' already exists")
+                raise FileDuplicateException(f"File '{meta.name}' already exists")
             self._state[meta.name] = FileStateContext(meta)
 
     async def _handle_client(self, reader, writer):
@@ -185,11 +185,14 @@ class Controller(AbstractController):
         )
 
     def stop(self):
+        self._logger.info("Stopping daemon...")
         with self._lock:
             for state in self._state.values():
                 state.clear()
             self._state = {}
+            self._logger.debug("Stopping UDP controller...")
             self._udp_controller.stop()
+            self._logger.debug("Stopping Controller loop...")
             self._loop.stop()
 
     @property
