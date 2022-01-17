@@ -32,4 +32,12 @@ loggers:
     handlers:
     - console
     level: DEBUG
+  AsyncioDatagramProtocol:
+    handlers:
+    - console
+    level: DEBUG
+  UdpSocket:
+    handlers:
+    - console
+    level: DEBUG
 version: 1

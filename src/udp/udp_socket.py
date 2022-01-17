@@ -1,9 +1,10 @@
 import asyncio
+import logging
 import queue
+import random
 import socket
 import sys
 from asyncio import Future
-from threading import Thread
 from typing import Tuple, Callable
 
 from common.config import *
@@ -12,10 +13,21 @@ from common.utils import all_ip4_addresses
 
 
 class AsyncioDatagramProtocol(asyncio.DatagramProtocol):
-    def __init__(self, receive_callbacks):
+    def __init__(self, receive_callbacks, broadcast_mode = False):
+        self._logger = logging.getLogger("AsyncioDatagramProtocol")
         self._receive_callbacks = receive_callbacks
+        self._broadcast_mode = broadcast_mode
+        self._drop_counter = 3
         self.transport = None
         super().__init__()
+
+    @property
+    def broadcast_mode(self):
+        return self._broadcast_mode
+
+    @broadcast_mode.setter
+    def broadcast_mode(self, set_to):
+        self._broadcast_mode = set_to
 
     def connection_made(self, transport):
         self.transport = transport
@@ -25,7 +37,19 @@ class AsyncioDatagramProtocol(asyncio.DatagramProtocol):
             # drop broadcasts coming from us
             if address[0] in all_ip4_addresses():
                 return
+        # drop broadcast by chance
+        if self._broadcast_mode:
+            if self._drop_counter == 0:
+                drop_broadcast = random.random() * 100 <= BROADCAST_DROP_CHANCE
+                if drop_broadcast:
+                    self._drop_counter = BROADCAST_DROP_IN_ROW
+            if self._drop_counter != 0:
+                no = BROADCAST_DROP_IN_ROW - self._drop_counter + 1
+                self._logger.debug("Dropping incoming broadcast datagram (%s/%s)", no, BROADCAST_DROP_IN_ROW)
+                self._drop_counter -= 1
+                return
 
+        # run callbacks
         for callback in self._receive_callbacks:
             callback(data, address)
 
@@ -36,6 +60,7 @@ class UdpSocket:
             address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT),
             buffer_size: int = UDP_BUFFER_SIZE,
     ):
+        self._logger = logging.getLogger("UdpSocket")
         self._server_task = None
         self._buffer_size = buffer_size
         self._address = address
@@ -44,6 +69,7 @@ class UdpSocket:
         self._receive_callbacks = []
         self._loop: asyncio.AbstractEventLoop = None
         self._transport = None
+        self._broadcast_mode = False
 
     def start(self):
         self._init_socket()
@@ -56,7 +82,8 @@ class UdpSocket:
     async def _serve_udp(self):
         self._transport, protocol = await self._loop.create_datagram_endpoint(
             lambda: AsyncioDatagramProtocol(
-                receive_callbacks=self._receive_callbacks
+                receive_callbacks=self._receive_callbacks,
+                broadcast_mode=self._broadcast_mode
             ),
             sock=self._socket
         )
@@ -95,6 +122,7 @@ class UdpSocket:
 class BroadcastSocket(UdpSocket):
     def __init__(self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE):
         super().__init__(address, buffer_size)
+        self._broadcast_mode = True
 
     def _init_socket(self):
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
