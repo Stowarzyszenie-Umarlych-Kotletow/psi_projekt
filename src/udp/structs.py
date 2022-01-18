@@ -85,7 +85,6 @@ class HeaderStruct(Struct):
     def message_type(self) -> MessageType:
         return MessageType(self._message_id)
 
-    @property
     def to_bytes(self) -> bytes:
         return struct.pack(self.FORMAT, self._magic_number, self._proto_version, self._message_id)
 
@@ -114,7 +113,6 @@ class HelloStruct(Struct):
     def __init__(self):
         super().__init__()
 
-    @property
     def to_bytes(self) -> bytes:
         return struct.pack(self.FORMAT)
 
@@ -122,7 +120,7 @@ class HelloStruct(Struct):
 class HereStruct(Struct):
     FORMAT = "!HH"
 
-    def __init__(self, unicast_port: int = UNICAST_PORT, tcp_port: int = TCP_PORT):
+    def __init__(self, unicast_port: int, tcp_port: int):
         super().__init__()
         self._unicast_port = unicast_port
         self._tcp_port = tcp_port
@@ -135,7 +133,6 @@ class HereStruct(Struct):
     def unicast_port(self) -> int:
         return self._unicast_port
 
-    @property
     def to_bytes(self) -> bytes:
         return struct.pack(self.FORMAT, self._unicast_port, self._tcp_port)
 
@@ -185,6 +182,5 @@ class FileDataStruct(Struct):
     def name_is_empty(self):
         return len(self.file_name) == 0
 
-    @property
     def to_bytes(self):
         return struct.pack(self.FORMAT, self._file_name, self._file_hash, self._file_size)

@@ -47,6 +47,7 @@ class FileMetadata:
     def can_share(self):
         return self.status == FileStatus.READY and self.is_valid
 
+
 class AbstractController(ABC):
     def get_file(self, name) -> FileMetadata:
         pass
@@ -65,3 +66,13 @@ class AbstractController(ABC):
 
     def provider_update(self, context, bytes_downloaded: int):
         pass
+
+
+class Singleton(type):
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            instance = super().__call__(*args, **kwargs)
+            cls._instances[cls] = instance
+        return cls._instances[cls]

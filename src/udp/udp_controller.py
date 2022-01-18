@@ -7,8 +7,8 @@ import time
 from typing import Dict, List, Tuple
 
 from common.config import *
-from common.tasks import new_loop
-from common.utils import is_sha256
+from common.tasks import coro_in_background, new_loop
+from common.utils import get_ip4_broadcast, is_sha256
 from common.exceptions import LogicError
 from common.models import FileMetadata
 from udp.datagrams import (
@@ -33,9 +33,15 @@ class InvalidSearchArgsException(Exception):
 
 class UdpController:
     def __init__(self, controller):
+        cfg = Config()
+
         self._logger = logging.getLogger("UdpController")
-        self._broadcast_socket = BroadcastSocket()
-        self._unicast_socket = UdpSocket()
+        broadcast_endpoint = (
+            get_ip4_broadcast(cfg.broadcast_iface),
+            cfg.broadcast_port,
+        )
+        self._broadcast_socket = BroadcastSocket(broadcast_endpoint)
+        self._unicast_socket = UdpSocket((cfg.bind_ip, cfg.udp_port))
         self._controller = controller
         self._add_receive_callbacks()
         self._loop: asyncio.AbstractEventLoop = None
@@ -43,7 +49,7 @@ class UdpController:
         self._known_peers: Dict[str, Peer] = {}
         self._known_peers_lock = threading.Lock()
 
-        self._search_results: Dict[str, List[FoundResponse]] = {}
+        self._search_results: Dict[str, Dict[str, FoundResponse]] = {}
         self._search_lock = threading.Lock()
 
     def _add_receive_callbacks(self):
@@ -58,16 +64,14 @@ class UdpController:
         self._loop = new_loop()
 
         # start sockets (and their threads)
-        self._unicast_socket.start()
-        self._broadcast_socket.start()
+        self._unicast_socket.start(self._loop)
+        self._broadcast_socket.start(self._loop)
 
-        # start threads
-        asyncio.run_coroutine_threadsafe(
-            self._serve_alive_agent(), self._loop
-        )
+        # run agent in background
+        coro_in_background(self._serve_alive_agent(), self._loop)
 
         # broadcast hello message
-        self._broadcast_socket.send(HelloDatagram().to_bytes)
+        self._broadcast_socket.send(HelloDatagram().to_bytes())
         self._logger.debug("Started UDP controller")
 
     def stop(self):
@@ -107,16 +111,16 @@ class UdpController:
                 raise LogicError(
                     f"There is another search for '{file_name}' in progress"
                 )
-            self._search_results[file_name] = []
+            self._search_results[file_name] = dict()
 
         peers_available = set(self.known_peers.keys())
 
         def get_missing_peers():
             peers_left = peers_available.copy()
             with self._search_lock:
-                for result in self._search_results[file_name]:
-                    if result.provider_ip in peers_left:
-                        peers_left.remove(result.provider_ip)
+                for provider_ip in self._search_results[file_name].keys():
+                    if provider_ip in peers_left:
+                        peers_left.remove(provider_ip)
             return peers_left
 
         find_struct = FileDataStruct(file_name, file_digest)
@@ -124,7 +128,7 @@ class UdpController:
 
         missing_peers = set()
 
-        for retry in range(SEARCH_RETRIES+1):
+        for retry in range(SEARCH_RETRIES + 1):
             if len(missing_peers) != 0:
                 self._logger.info(
                     "Search | %s peers did not respond, retrying search for file %s with optional digest %s (%s/%s)",
@@ -134,7 +138,7 @@ class UdpController:
                     retry,
                     SEARCH_RETRIES,
                 )
-            self._broadcast_socket.send(find_datagram.to_bytes)
+            self._broadcast_socket.send(find_datagram.to_bytes())
 
             # find and found callbacks are now working
             await asyncio.sleep(FINDING_TIME)
@@ -150,18 +154,19 @@ class UdpController:
             self._logger.info("Search | Deleting unresponsive peer %s", peer_ip)
             self.remove_peer(peer_ip)
 
-        # disable finding mode
+        # clear the dict indicating that the search is over
         with self._search_lock:
-            responses: List[FoundResponse] = self._search_results.pop(file_name)
+            responses: Dict[str, FoundResponse] = self._search_results.pop(file_name)
 
         results_dict = dict()
-        for response in responses:
+        for response in responses.values():
             if response.is_found:
                 results_dict.setdefault(response.digest, []).append(response)
+
         self._logger.info(
-            "Search | Found %s in %s out of %s peers",
+            "Search | Found %s in %d out of %d peers",
             file_name,
-            sum(len(_list) for _list in results_dict.items()),
+            sum(len(_list) for _list in results_dict.values()),
             len(peers_available),
         )
         return results_dict
@@ -174,7 +179,7 @@ class UdpController:
             return
         self._logger.debug("Hello | Responding with HERE to new peer %s", address[0])
         here_datagram = HereDatagram()
-        self._broadcast_socket.send(here_datagram.to_bytes)
+        self._broadcast_socket.send(here_datagram.to_bytes())
 
     def here_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
         received_here_datagram = HereDatagram.from_bytes(datagram_bytes)
@@ -197,9 +202,7 @@ class UdpController:
                 "Here | Received HERE message from peer %s:%s", address[0], address[1]
             )
         if is_new:
-            self._logger.debug(
-                "Here | Discovered peer %s:%s", address[0], address[1]
-            )
+            self._logger.debug("Here | Discovered peer %s:%s", address[0], address[1])
 
     def find_callback(self, datagram_bytes: bytes, address: Tuple[str, int]):
         # check if datagram is of type FindDatagram
@@ -246,7 +249,7 @@ class UdpController:
 
         unicast_port = peer.unicast_port
         self._unicast_socket.send_to(
-            response_datagram.to_bytes, ip_address, unicast_port
+            response_datagram.to_bytes(), ip_address, unicast_port
         )
 
     # UDP UNICAST RECEIVE CALLBACKS
@@ -256,7 +259,6 @@ class UdpController:
         received_found_datagram = FoundDatagram.from_bytes(datagram_bytes)
         if received_found_datagram is None:
             return
-        print("found callback")
 
         provider_ip = address[0]
 
@@ -274,9 +276,9 @@ class UdpController:
 
         # add provider to the set
         with self._search_lock:
-            result_list = self._search_results.get(found_response.name)
-            if result_list is not None:
-                result_list.append(found_response)
+            result_peers = self._search_results.get(found_response.name)
+            if result_peers is not None:
+                result_peers[provider_ip] = found_response
 
         self._logger.debug(
             "Found | Found file %s with digest %.8s, of size %s, peer %s",
@@ -292,7 +294,6 @@ class UdpController:
         received_not_found_datagram = NotFoundDatagram.from_bytes(datagram_bytes)
         if received_not_found_datagram is None:
             return
-        print("not found callback")
 
         provider_ip = address[0]
 
@@ -310,14 +311,15 @@ class UdpController:
 
         # add provider to the set
         with self._search_lock:
-            result_list = self._search_results.get(not_found_response.name)
-            if result_list is not None:
-                result_list.append(not_found_response)
+            result_peers = self._search_results.get(not_found_response.name)
+            if result_peers is not None and provider_ip not in result_peers:
+                # insert the peer response only if this peer was not present
+                result_peers[provider_ip] = not_found_response
         self._logger.debug(
             "NotFound | Did not find file %s with optional digest %.8s, peer %s",
             not_found_response.name,
             not_found_response.digest,
-            provider_ip
+            provider_ip,
         )
 
     def remove_peer(self, peer_ip):
@@ -330,7 +332,8 @@ class UdpController:
         agent that broadcasts HERE messages every 10 seconds
         and deletes peers older than 30 seconds
         """
-        here_bytes = HereDatagram().to_bytes
+        cfg = Config()
+        here_bytes = HereDatagram().to_bytes()
         while True:
             self._logger.debug("Broadcasting HERE message")
             self._broadcast_socket.send(here_bytes)
