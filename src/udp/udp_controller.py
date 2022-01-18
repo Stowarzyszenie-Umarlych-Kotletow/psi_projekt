@@ -172,7 +172,7 @@ class UdpController:
         received_hello_datagram = HelloDatagram.from_bytes(datagram_bytes)
         if received_hello_datagram is None:
             return
-        self._logger.debug("Hello | Responding to new peer %s", address[0])
+        self._logger.debug("Hello | Responding with HERE to new peer %s", address[0])
         here_datagram = HereDatagram()
         self._broadcast_socket.send(here_datagram.to_bytes)
 
