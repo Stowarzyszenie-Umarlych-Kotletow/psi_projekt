@@ -84,8 +84,7 @@ class SimpleShell(Cmd):
 
         print(status_table)
 
-    def do_search(self, inp):
-        """search <file_name>: search for file in the network"""
+    def _do_search(self, inp):
         try:
             self._controller.get_file(inp)
             print("File already exists in your local repository")
@@ -113,9 +112,13 @@ class SimpleShell(Cmd):
         print(search_table)
         return responses
 
+    def do_search(self, inp):
+        """search <file_name>: search for file in the network"""
+        self._do_search(inp)
+
     def do_download(self, inp):
         """download <file_name>: download file with given name from the network"""
-        responses = self.do_search(inp)
+        responses = self._do_search(inp)
         if responses is None:
             return
         # handle multiple versions
@@ -158,7 +161,9 @@ class SimpleShell(Cmd):
 
         try:
             file = self._controller.get_file(inp)
-            print(f"Deleting file '{file.name}' with status '{file.status}' from the repository")
+            print(
+                f"Deleting file '{file.name}' with status '{file.status}' from the repository"
+            )
             self._controller.remove_file(file.name)
             print(f"Done. The file is still available at '{file.path}'")
         except Exception as e:

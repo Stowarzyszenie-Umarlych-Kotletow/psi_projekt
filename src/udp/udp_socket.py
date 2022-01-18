@@ -131,3 +131,4 @@ class BroadcastSocket(UdpSocket):
     def _init_socket(self):
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.IP_MULTICAST_LOOP, 0)

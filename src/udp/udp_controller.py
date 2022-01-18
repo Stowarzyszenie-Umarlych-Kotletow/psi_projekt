@@ -332,7 +332,6 @@ class UdpController:
         agent that broadcasts HERE messages every 10 seconds
         and deletes peers older than 30 seconds
         """
-        cfg = Config()
         here_bytes = HereDatagram().to_bytes()
         while True:
             self._logger.debug("Broadcasting HERE message")

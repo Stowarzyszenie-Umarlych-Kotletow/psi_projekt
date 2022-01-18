@@ -1,9 +1,9 @@
+from functools import cache
 import hashlib
 import re
 
 from netifaces import interfaces, ifaddresses, AF_INET
 from common.config import *
-
 
 def sha256sum(data):
     if type(data) == str:

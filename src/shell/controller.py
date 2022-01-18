@@ -15,7 +15,7 @@ from common.exceptions import (
     LogicError,
     FileNameTooLongException,
 )
-from common.tasks import new_loop, in_background
+from common.tasks import coro_in_background, new_loop, in_background
 from file_transfer.server import ServerHandler
 from repository.repository import NotFoundError, Repository
 from udp.found_response import FoundResponse
@@ -166,11 +166,8 @@ class Controller(AbstractController):
                 ):
                     self._logger.warning("Truncating download %s", meta.name)
                     meta.current_size = 0
-                in_background(
-                    asyncio.run_coroutine_threadsafe(
-                        self.retry_download(meta.name), self._loop
-                    )
-                )
+                coro_in_background(self.retry_download(meta.name), self._loop)
+
             elif meta.status == FileStatus.READY and not meta.is_valid:
                 self._logger.warning("Invalidating file %s", meta.name)
                 self._executor.submit(self._repo.change_state, meta.name, "INVALID")

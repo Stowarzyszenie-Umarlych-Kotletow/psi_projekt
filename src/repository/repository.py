@@ -1,3 +1,4 @@
+from curses import meta
 from threading import Lock
 import os, yaml
 import hashlib
@@ -74,6 +75,12 @@ class Repository:
                     continue
 
                 metadata = self.__update_metadata(metadata)
+                
+                if metadata.status == FileStatus.READY and not metadata.is_valid:
+                    # the file is no longer valid
+                    self.logger.warn("File %s is no longer valid.", metadata.name)
+                    metadata.status = FileStatus.INVALID
+                
                 self.__persist_filedata(metadata)
 
                 self._files[metadata.name] = metadata
@@ -168,7 +175,7 @@ class Repository:
     def __check_and_create(self, mode=0o777) -> None:
         if not os.path.isdir(self._path):
             try:
-                os.mkdir(self._path, mode)
+                os.makedirs(self._path, mode, exist_ok=True)
             except Exception as e:
                 self.logger.error(
                     "Could not create application folder in %s", self._path
