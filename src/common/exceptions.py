@@ -1,8 +1,5 @@
 from typing import Optional
 
-from common.config import MAX_FILENAME_LENGTH
-
-
 class LogicError(Exception):
     def __init__(self, msg: Optional[str] = None, *args: object) -> None:
         super().__init__(*args)

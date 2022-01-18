@@ -1,15 +1,20 @@
 import asyncio
 import logging
+from asyncio import run_coroutine_threadsafe, start_server
 import random
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional, Tuple, Dict
 
-from common.config import TCP_PORT, MAX_FILENAME_LENGTH
+from common.config import Config, MAX_FILENAME_LENGTH
 from common.models import AbstractController, FileMetadata, FileStatus
 from file_transfer.client import ClientHandler
 from file_transfer.context import FileConsumerContext, FileProviderContext
-from common.exceptions import FileDuplicateException, LogicError, FileNameTooLongException
+from common.exceptions import (
+    FileDuplicateException,
+    LogicError,
+    FileNameTooLongException,
+)
 from common.tasks import new_loop, in_background
 from file_transfer.server import ServerHandler
 from repository.repository import NotFoundError, Repository
@@ -72,19 +77,34 @@ class Controller(AbstractController):
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor()
         self._logger = logging.getLogger("Controller")
+        self._tcp_server: asyncio.AbstractServer = None
 
     def start(self):
+        cfg = Config()
         self._logger.info("Starting...")
 
         self._loop = new_loop()
-        self._repo.load()
-        self._load_from_repo()
+        try:
+            self._repo.load()
+            self._load_from_repo()
+        except Exception as exc:
+            raise LogicError(f"Failed to load the file repository: {exc}")
 
-        self._udp_controller.start()
-        self._server_task: Future = asyncio.run_coroutine_threadsafe(
+        try:
+            self._udp_controller.start()
+        except Exception as exc:
+            raise LogicError(f"Failed to start the UDP controller: {exc}")
+        try:
+            self._tcp_server: asyncio.AbstractServer = run_coroutine_threadsafe(
+                start_server(self._handle_client, cfg.bind_ip, cfg.tcp_port), self._loop
+            ).result()
+        except Exception as exc:
+            raise LogicError(f"Failed to start the TCP server")
+
+        self._server_task: Future = run_coroutine_threadsafe(
             self._serve_tcp(), self._loop
         )
-        self._monitor_task: Future = asyncio.run_coroutine_threadsafe(
+        self._monitor_task: Future = run_coroutine_threadsafe(
             self._monitor_files(), self._loop
         )
 
@@ -100,7 +120,7 @@ class Controller(AbstractController):
         with self._lock:
             if meta.name in self._state:
                 self._logger.warning("Attempted to add duplicate file %s", meta.name)
-                raise FileDuplicateException(f"File '{self.name}' already exists")
+                raise FileDuplicateException(f"File '{meta.name}' already exists")
             self._state[meta.name] = FileStateContext(meta)
 
     async def _handle_client(self, reader, writer):
@@ -117,7 +137,9 @@ class Controller(AbstractController):
                 handler = ClientHandler(context)
                 await handler.handle_connection(*streams)
 
-                await self._loop.run_in_executor(None, self._repo.update_stat, file.name)
+                await self._loop.run_in_executor(
+                    None, self._repo.update_stat, file.name
+                )
 
                 self._logger.info("Download of %s completed", file.name)
                 if not file.is_valid:
@@ -130,7 +152,7 @@ class Controller(AbstractController):
             self._udp_controller.remove_peer(endpoint[0])
 
     async def _serve_tcp(self):
-        server = await asyncio.start_server(self._handle_client, "0.0.0.0", TCP_PORT)
+        server = self._tcp_server
         async with server:
             await server.serve_forever()
 
@@ -183,12 +205,20 @@ class Controller(AbstractController):
             )
         )
 
+    def is_running(self):
+        return self._loop.is_running()
+
     def stop(self):
+        self._logger.info("Stopping daemon...")
         with self._lock:
+            if self._tcp_server:
+                self._tcp_server.close()
             for state in self._state.values():
                 state.clear()
             self._state = {}
+            self._logger.debug("Stopping UDP controller...")
             self._udp_controller.stop()
+            self._logger.debug("Stopping Controller loop...")
             self._loop.stop()
 
     @property
@@ -215,7 +245,9 @@ class Controller(AbstractController):
 
     def get_file(self, name) -> FileMetadata:
         if len(name) > MAX_FILENAME_LENGTH:
-            raise FileNameTooLongException(f"File name exceeds {MAX_FILENAME_LENGTH} characters")
+            raise FileNameTooLongException(
+                f"File name exceeds {MAX_FILENAME_LENGTH} characters"
+            )
         return self._get_file_state(name).file_meta
 
     def add_consumer(self, context):

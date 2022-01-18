@@ -1,9 +1,16 @@
-    # STRUCTS
+# STRUCTS
 from abc import abstractmethod
 
 from common.config import *
-from udp.structs import MessageType, HereStruct, HelloStruct, HeaderStruct, FileDataStruct, \
-    InvalidHeaderException, Struct
+from udp.structs import (
+    MessageType,
+    HereStruct,
+    HelloStruct,
+    HeaderStruct,
+    FileDataStruct,
+    InvalidHeaderException,
+    Struct,
+)
 
 
 class Datagram:
@@ -55,7 +62,9 @@ class Datagram:
         try:
             message_type = cls._msg_type_from_datagram_bytes(datagram_bytes)
             if cls.msg_type_to_datagram(message_type) != cls:
-                raise InvalidHeaderException(f"Message id {message_type} does not match cls {cls}")
+                raise InvalidHeaderException(
+                    f"Message id {message_type} does not match cls {cls}"
+                )
         except InvalidHeaderException:
             return None
         # shift datagram_bytes by header size to message_bytes
@@ -66,10 +75,9 @@ class Datagram:
         message_struct = message_struct_cls.from_bytes(message_bytes)
         return cls(message_struct)
 
-    @property
     def to_bytes(self) -> bytes:
-        header_bytes = self.header.to_bytes
-        message_bytes = self.message.to_bytes
+        header_bytes = self.header.to_bytes()
+        message_bytes = self.message.to_bytes()
         return header_bytes + message_bytes
 
 
@@ -84,9 +92,9 @@ class HelloDatagram(Datagram):
 
 
 class HereDatagram(Datagram):
-    def __init__(self, here_struct: HereStruct = HereStruct()):
+    def __init__(self, here_struct: Optional[HereStruct] = None):
         super().__init__(MessageType.HERE)
-        self._message: HereStruct = here_struct
+        self._message = here_struct or HereStruct(Config().udp_port, Config().tcp_port)
 
     @property
     def message(self) -> HereStruct:
