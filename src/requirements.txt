@@ -12,4 +12,4 @@ PyYAML==6.0
 tomli==1.2.3
 typing-extensions==4.0.1
 wcwidth==0.2.5
--e .
+# -e .

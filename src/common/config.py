@@ -9,6 +9,7 @@ from common.models import Singleton
 # if you experience problems with
 
 # Config
+
 DEFAULT_BROADCAST_PORT = 13370
 DEFAULT_UDP_PORT = 13371
 DEFAULT_TCP_PORT = 13372
@@ -25,6 +26,9 @@ DIGEST_ALG = "sha256"
 FINGERPRINT_LENGTH = 10
 FINDING_TIME = 2
 SEARCH_RETRIES = 2
+
+METADATA_FOLDER_NAME = ".meta"
+YAML_EXTENSION = ".yaml"
 
 class Config(metaclass=Singleton):
     def __init__(self) -> None:

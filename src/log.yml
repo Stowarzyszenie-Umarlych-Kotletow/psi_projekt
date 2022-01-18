@@ -42,6 +42,10 @@ loggers:
     handlers:
     - console
     level: DEBUG
+  Repository:
+    handlers:
+    - console
+    level: DEBUG
   AsyncioDatagramProtocol:
     handlers:
     - console
