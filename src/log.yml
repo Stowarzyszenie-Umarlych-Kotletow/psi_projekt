@@ -5,16 +5,26 @@ formatters:
   simple:
     format: '%(asctime)s | %(name)s | %(levelname)s | %(message)s'
 handlers:
+  request-file:
+    class: logging.StreamHandler
+    formatter: request
+    level: INFO
+    stream: ext://sys.stdout
+  file:
+    class: logging.StreamHandler
+    formatter: simple
+    level: INFO
+    stream: ext://sys.stdout
   request-console:
     class: logging.StreamHandler
     formatter: request
     level: DEBUG
-    stream: ext://sys.stdout
+    stream: ext://sys.stderr
   console:
     class: logging.StreamHandler
     formatter: simple
     level: DEBUG
-    stream: ext://sys.stdout
+    stream: ext://sys.stderr
 loggers:
   ClientHandler:
     handlers:
@@ -33,6 +43,14 @@ loggers:
     - console
     level: DEBUG
   Repository:
+    handlers:
+    - console
+    level: DEBUG
+  AsyncioDatagramProtocol:
+    handlers:
+    - console
+    level: DEBUG
+  UdpSocket:
     handlers:
     - console
     level: DEBUG

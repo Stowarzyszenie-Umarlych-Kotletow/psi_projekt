@@ -18,7 +18,7 @@ class SimpleShell(Cmd):
         self._controller: Controller = controller
 
     prompt = "> "
-    intro = "Welcome to UberP2P! Type ? to list commands"
+    intro = "Welcome to SimpleP2P. Type ? to list commands"
 
     def do_exit(self, inp):
         """exit: exit the application"""
@@ -118,12 +118,18 @@ class SimpleShell(Cmd):
         responses = self.do_search(inp)
         if responses is None:
             return
+        # handle multiple versions
         if len(responses) == 1:
             target_digest = next(iter(responses))
         else:
             print("Found multiple versions. Please choose one.")
-            provider_id = int(input("Select provider index: "))
-            target_digest = list(responses.keys())[provider_id]
+            try:
+                provider_id = int(input("Select provider index: "))
+                target_digest = list(responses.keys())[provider_id]
+            except:
+                print("Invalid choice")
+                return
+        # start the download
         print("Starting download...")
         response: FoundResponse = random.choice(responses[target_digest])
         target_ip = response.provider_ip
@@ -152,8 +158,9 @@ class SimpleShell(Cmd):
 
         try:
             file = self._controller.get_file(inp)
-            print(f"Deleting file '{file.name}' with status '{file.status}'")
+            print(f"Deleting file '{file.name}' with status '{file.status}' from the repository")
             self._controller.remove_file(file.name)
+            print(f"Done. The file is still available at '{file.path}'")
         except Exception as e:
             print("Cannot remove the file: ", e)
 
@@ -175,3 +182,19 @@ class SimpleShell(Cmd):
             print(table)
         except Exception as e:
             print("Not found: ", e)
+
+    def do_stop(self, inp):
+        """stop: stop daemon"""
+        if self._controller.is_running():
+            print("Stopping daemon...")
+            self._controller.stop()
+        else:
+            print("Daemon is not running")
+
+    def do_start(self, inp):
+        """start: start daemon"""
+        if not self._controller.is_running():
+            print("Starting daemon...")
+            self._controller.start()
+        else:
+            print("Daemon is already running")

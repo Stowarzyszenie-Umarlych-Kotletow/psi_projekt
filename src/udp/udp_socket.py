@@ -1,39 +1,107 @@
+import asyncio
+import logging
 import queue
+import random
 import socket
 import sys
-from threading import Thread
+from asyncio import AbstractEventLoop, Future
 from typing import Tuple, Callable
 
-from common.utils import all_ip4_addresses
 from common.config import *
+from common.tasks import new_loop
+from common.utils import all_ip4_addresses
+
+
+class AsyncioDatagramProtocol(asyncio.DatagramProtocol):
+    def __init__(self, receive_callbacks, broadcast_mode=False):
+        self._logger = logging.getLogger("AsyncioDatagramProtocol")
+        self._receive_callbacks = receive_callbacks
+        self._broadcast_mode = broadcast_mode
+        self._drop_counter = 0
+        self.transport = None
+        super().__init__()
+
+    @property
+    def broadcast_mode(self):
+        return self._broadcast_mode
+
+    @broadcast_mode.setter
+    def broadcast_mode(self, set_to):
+        self._broadcast_mode = set_to
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def datagram_received(self, data, address):
+        if BROADCAST_OMIT_SELF:
+            # drop broadcasts coming from us
+            if address[0] in all_ip4_addresses():
+                return
+
+        # drop broadcast by chance
+        if self._broadcast_mode:
+            if self._drop_counter == 0:
+                drop_broadcast = random.random() * 100 <= Config().broadcast_drop_chance
+                if drop_broadcast:
+                    self._drop_counter = Config().broadcast_drop_in_row
+            if self._drop_counter != 0:
+                no = Config().broadcast_drop_in_row - self._drop_counter + 1
+                self._logger.debug(
+                    "Dropping incoming broadcast datagram (%s/%s)",
+                    no,
+                    Config().broadcast_drop_in_row,
+                )
+                self._drop_counter -= 1
+                return
+
+        # run callbacks
+        for callback in self._receive_callbacks:
+            try:
+                callback(data, address)
+            except Exception as exc:
+                self._logger.error("Error while executing UDP callback", exc_info=exc)
 
 
 class UdpSocket:
     def __init__(
         self,
-        address: Tuple[str, int] = (UNICAST_IP, UNICAST_PORT),
+        address: Tuple[str, int],
         buffer_size: int = UDP_BUFFER_SIZE,
     ):
+        self._logger = logging.getLogger("UdpSocket")
         self._buffer_size = buffer_size
         self._address = address
         self._socket = None
-        self._init_socket()
         self._send_queue = queue.Queue()
-        self._t_queue_popper = Thread(target=self._q_popper, daemon=True)
-        self._t_listener = Thread(target=self._listen, daemon=True)
         self._receive_callbacks = []
+        self._transport = None
+        self._broadcast_mode = False
 
-    def __del__(self):
-        self._socket.close()
+    def start(self, loop: AbstractEventLoop):
+        self._init_socket()
+        self._socket.bind(self._address)
+        self._transport, protocol = asyncio.run_coroutine_threadsafe(
+            self._create_udp(), loop
+        ).result()
 
-    def start(self):
-        self._t_queue_popper.start()
-        self._t_listener.start()
+    async def _create_udp(self):
+        return await asyncio.get_event_loop().create_datagram_endpoint(
+            lambda: AsyncioDatagramProtocol(
+                receive_callbacks=list(self._receive_callbacks),
+                broadcast_mode=self._broadcast_mode,
+            ),
+            sock=self._socket,
+        )
 
     def stop(self):
-        pass
+        self._transport.close()
+        self._socket.close()
+        del self._socket
+        self._socket = None
 
     def add_receive_callback(self, callback: Callable[[bytes, Tuple[str, int]], None]):
+        if self._socket:
+            raise LogicError("Cannot add callbacks while the socket is running")
         self._receive_callbacks.append(callback)
 
     def send(self, data: bytes):
@@ -42,57 +110,24 @@ class UdpSocket:
 
     def send_to(self, data: bytes, ip_address: str, port: int = None):
         """queries send_to method"""
-        self._send_queue.put((data, ip_address, port))
-
-    def _init_socket(self):
-        try:
-            self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self._socket.bind(self._address)
-
-        except socket.error as e:
-            sys.stderr.write(f"[ERROR] Socket failed: {e.strerror}\n")
-            exit(1)
-
-    def _receive(self):
-        data, address = self._socket.recvfrom(self._buffer_size)
-        if BROADCAST_OMIT_SELF:
-            # drop broadcasts coming from us
-            if address[0] in all_ip4_addresses():
-                return self._receive()
-        num_bytes = len(data)
-
-        for callback in self._receive_callbacks:
-            callback(data, address)
-
-    def _listen(self):
-        while True:
-            self._receive()
-
-    def _q_popper(self):
-        while True:
-            data, ip_address, port = self._send_queue.get(block=True)
-            self._send_to(data, ip_address, port)
-            self._send_queue.task_done()
-
-    def _send(self, data: bytes):
-        self._send_to(data, self._address[0], self._address[1])
-
-    def _send_to(self, data: bytes, ip_address: str, port: int = None):
         if port is None:
             port = self._address[1]
         if ip_address is None or port is None:
             raise ValueError("Destination port or ip is not specified")
-        try:
-            self._socket.sendto(data, (ip_address, port))
+        
+        self._socket.sendto(data, (ip_address, port))
 
-        except Exception as err:
-            print("[!] Error sending packet: %s" % err)
-            sys.exit(1)
+
+
+    def _init_socket(self):
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 
 class BroadcastSocket(UdpSocket):
-    def __init__(
-        self, address=(BROADCAST_IP, BROADCAST_PORT), buffer_size=UDP_BUFFER_SIZE
-    ):
+    def __init__(self, address, buffer_size=UDP_BUFFER_SIZE):
         super().__init__(address, buffer_size)
+        self._broadcast_mode = True
+
+    def _init_socket(self):
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
