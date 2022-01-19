@@ -1,7 +1,9 @@
-from typing import Tuple, Optional
-from common.models import AbstractController, FileMetadata
 
-from file_transfer.models import FileProvider
+from typing import Tuple, Optional
+from simple_p2p.common.models import AbstractController, FileMetadata
+from simple_p2p.file_transfer.exceptions import InconsistentFileStateError
+
+from simple_p2p.file_transfer.models import FileProvider
 
 
 class FileContext(FileProvider):
@@ -44,7 +46,7 @@ class FileConsumerContext(FileContext):
         return self
 
     def __exit__(self, exc_type, exc_value, tb):
-        self._controller.remove_consumer(self)
+        self._controller.remove_consumer(self, exc_type, exc_value)
 
 
 class FileProviderContext(FileContext):
@@ -56,5 +58,5 @@ class FileProviderContext(FileContext):
         self._controller.provider_update(self, bytes_downloaded)
 
     def __exit__(self, exc_type, exc_value, tb):
-        self._controller.remove_provider(self, exc_value)
+        self._controller.remove_provider(self, exc_type, exc_value)
         return super(FileProviderContext, self).__exit__(exc_type, exc_value, tb)

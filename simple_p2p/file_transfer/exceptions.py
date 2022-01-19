@@ -1,6 +1,6 @@
 from typing import Optional
 
-from common.exceptions import LogicError
+from simple_p2p.common.exceptions import LogicError
 
 
 class ProtoError(Exception):
@@ -11,4 +11,7 @@ class ProtoError(Exception):
 
 
 class InvalidRangeError(LogicError):
+    pass
+
+class InconsistentFileStateError(LogicError):
     pass

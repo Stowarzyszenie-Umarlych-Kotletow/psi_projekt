@@ -1,12 +1,5 @@
-import os
-from typing import Optional
-from common.exceptions import LogicError
-
-from common.models import Singleton
-
-# Unicast and broadcast ports are the same in the whole network
-# BROADCAST_IP must be set the same in the whole network
-# if you experience problems with
+from simple_p2p.common.exceptions import LogicError
+from simple_p2p.common.models import Singleton
 
 # Config
 
@@ -15,12 +8,16 @@ DEFAULT_UDP_PORT = 13371
 DEFAULT_TCP_PORT = 13372
 DEFAULT_BIND_IP = '0.0.0.0'
 
-# Development
 BROADCAST_OMIT_SELF = True
 PROTO_VERSION = 1
 ENCODING = "utf-8"
 MAGIC_NUMBER = 0xD16D
+FILE_CHUNK_SIZE = 16384
 UDP_BUFFER_SIZE = 2048
+UDP_PEER_CLEANUP_PERIOD = 30
+UDP_ADVERTISE_PERIOD = 10
+TCP_FILE_SEND_TIMEOUT = 15
+TCP_FILE_RECEIVE_TIMEOUT = 10
 MAX_FILENAME_LENGTH = 32
 DIGEST_ALG = "sha256"
 FINGERPRINT_LENGTH = 10

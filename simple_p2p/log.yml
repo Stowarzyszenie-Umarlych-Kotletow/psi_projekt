@@ -1,20 +1,10 @@
 formatters:
   request:
-    format: '%(asctime)s | %(name)s | %(id).8s | %(levelname)s | %(method)s %(urn)s:
+    format: '%(asctime)s | %(name)s | %(id).8s | %(levelname)s | %(method)s %(uri)s:
       %(message)s'
   simple:
     format: '%(asctime)s | %(name)s | %(levelname)s | %(message)s'
 handlers:
-  request-file:
-    class: logging.StreamHandler
-    formatter: request
-    level: INFO
-    stream: ext://sys.stdout
-  file:
-    class: logging.StreamHandler
-    formatter: simple
-    level: INFO
-    stream: ext://sys.stdout
   request-console:
     class: logging.StreamHandler
     formatter: request
@@ -25,6 +15,16 @@ handlers:
     formatter: simple
     level: DEBUG
     stream: ext://sys.stderr
+#  request-console:
+#    class: logging.StreamHandler
+#    formatter: request
+#    level: DEBUG
+#    stream: ext://sys.stderr
+#  console:
+#    class: logging.StreamHandler
+#    formatter: simple
+#    level: DEBUG
+#    stream: ext://sys.stderr
 loggers:
   ClientHandler:
     handlers:

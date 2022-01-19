@@ -55,13 +55,13 @@ class AbstractController(ABC):
     def add_consumer(self, context):
         pass
 
-    def remove_consumer(self, context):
+    def remove_consumer(self, context, exc_type, exc_value):
         pass
 
     def add_provider(self, context):
         pass
 
-    def remove_provider(self, context, exc: Optional[Exception]):
+    def remove_provider(self, context, exc_type, exc_value):
         pass
 
     def provider_update(self, context, bytes_downloaded: int):

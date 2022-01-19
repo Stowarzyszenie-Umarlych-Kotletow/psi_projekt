@@ -1,9 +1,8 @@
-# STRUCTS
 import struct
 from abc import abstractmethod
 
-from common.config import *
-from udp.message_type import MessageType
+from simple_p2p.common.config import *
+from simple_p2p.udp.message_type import MessageType
 
 
 class InvalidHeaderException(Exception):

@@ -3,10 +3,10 @@ import logging.config
 from pathlib import Path
 
 import yaml
-from common.config import Config
+from simple_p2p.common.config import Config
 
-from shell.controller import Controller
-from shell.simple_shell import SimpleShell
+from simple_p2p.core.controller import Controller
+from simple_p2p.core.simple_shell import SimpleShell
 
 
 def configure_logging():
@@ -23,13 +23,22 @@ def parse_cmdline():
     parser.add_argument("--bind-ip", help="IP to bind for file transfer and discovery", type=str, default=cfg.bind_ip)
     parser.add_argument("--tcp-port", help="TCP port to use for file transfer", type=int, default=cfg.tcp_port)
     parser.add_argument("--udp-port", help="UDP port to use for file discovery", type=int, default=cfg.udp_port)
-    parser.add_argument("--broadcast-iface", help="Interface to broadcast on for peer/file discovery", type=str, default=cfg.broadcast_iface)
+    parser.add_argument("--broadcast-iface", help="Interface to broadcast on for peer/file discovery, eg. eth0", type=str, default=cfg.broadcast_iface)
     parser.add_argument("--broadcast-port", help="UDP port to broadcast on for peer/file discovery", type=int, default=cfg.broadcast_port)
     parser.add_argument("--broadcast-drop-chance", help="Percentage chance to drop incoming broadcast packet", type=int, default=cfg.broadcast_drop_chance)
     parser.add_argument("--broadcast-drop-in-row", help="Number of packets to be dropped at once",type=int, default=cfg.broadcast_drop_in_row)
     args = parser.parse_args()
     args_dict = {k: v for (k, v) in args._get_kwargs()}
     cfg.update(args_dict)
+
+import sys
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    logging.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+sys.excepthook = handle_exception
 
 def run():
     parse_cmdline()

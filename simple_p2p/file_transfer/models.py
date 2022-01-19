@@ -1,16 +1,23 @@
 from abc import ABC, abstractmethod
 from asyncio.streams import StreamReader, StreamWriter
+from asyncio import wait_for
 from distutils import command
 from optparse import Option
 from typing import *
 
 from aiofile.utils import async_open
-from file_transfer.exceptions import InvalidRangeError, ProtoError
-from file_transfer.io_utils import calc_range_len
-from file_transfer.parse_utils import *
-from file_transfer.enums import ContentType, KnownHeader, ProtoMethod, ProtoStatusCode
-from common.models import FileMetadata
-from common.exceptions import LogicError
+from simple_p2p.file_transfer.exceptions import InconsistentFileStateError, InvalidRangeError, ProtoError
+from simple_p2p.file_transfer.io_utils import calc_range_len
+from simple_p2p.file_transfer.parse_utils import *
+from simple_p2p.file_transfer.enums import (
+    ContentType,
+    KnownHeader,
+    ProtoMethod,
+    ProtoStatusCode,
+)
+from simple_p2p.common.config import FILE_CHUNK_SIZE, TCP_FILE_SEND_TIMEOUT
+from simple_p2p.common.models import FileMetadata
+from simple_p2p.common.exceptions import LogicError
 
 TRequest = TypeVar("TRequest", bound="Request")
 
@@ -20,6 +27,11 @@ ENCODING = "utf-8"
 
 
 class SanitizingDict:
+    """
+    Base-class to implement dictionary that sanitizes entries' keys
+    using the `sanitize` function
+    """
+
     def __init__(self, init_dict: dict = None, **kwargs) -> None:
         self.items: Dict[str, str] = {}
         if init_dict:
@@ -53,11 +65,19 @@ class SanitizingDict:
 
 
 class DigestContainer(SanitizingDict):
+    """
+    Stores information about the Digest header
+    """
+
     def sanitize(self, value: str) -> str:
         return value.lower()
 
 
 class HeadersContainer(SanitizingDict):
+    """
+    Stores various `Request` and `Response` headers
+    """
+
     def sanitize(self, value: str) -> str:
         return KnownHeader.sanitize(value)
 
@@ -107,14 +127,14 @@ class HeadersContainer(SanitizingDict):
 
 class Request:
     def __init__(
-        self, method: ProtoMethod, urn: str, headers: HeadersContainer
+        self, method: ProtoMethod, uri: str, headers: HeadersContainer
     ) -> None:
         self.method = method
-        self.urn = urn
+        self.uri = uri
         self.headers = headers
 
     async def write_to(self, writer: StreamWriter, encoding: str = ENCODING):
-        writer.write(f"{self.method.value} {self.urn}{LINE_SEP}".encode(encoding))
+        writer.write(f"{self.method.value} {self.uri}{LINE_SEP}".encode(encoding))
         self.headers.write_to(writer, encoding)
         await writer.drain()
 
@@ -125,10 +145,10 @@ class Request:
         request_line = process_line(
             await reader.readline(), encoding, "Invalid request line"
         )
-        (method, urn) = parse_request_line(request_line)
+        (method, uri) = parse_request_line(request_line)
         headers = await HeadersContainer.read_from(reader)
 
-        request = cls(method=method, urn=urn, headers=headers)
+        request = cls(method=method, uri=uri, headers=headers)
         return request
 
 
@@ -185,6 +205,10 @@ class Response:
 
 
 class FileProvider(ABC):
+    """
+    Provides a file to be written into the output stream
+    """
+
     @property
     @abstractmethod
     def file(self) -> FileMetadata:
@@ -199,6 +223,10 @@ class FileProvider(ABC):
 
 
 class ByteRange:
+    """
+    Helper class that specifies the byte range of a file
+    """
+
     def __init__(
         self, offset: Optional[int] = None, length: Optional[int] = None
     ) -> None:
@@ -229,11 +257,15 @@ class ByteRange:
 
 
 class FileResponse(Response):
+    """
+    `Response` that includes a local file as body
+    """
+
     def __init__(
         self,
         file_provider: FileProvider,
         range: ByteRange = None,
-        chunk_size=16 * 1024,
+        chunk_size=FILE_CHUNK_SIZE,
         headers=None,
         **kwargs,
     ):
@@ -276,9 +308,9 @@ class FileResponse(Response):
                         break
                     to_read -= num_read_bytes
                     writer.write(read_bytes)
-                    await writer.drain()
+                    await wait_for(writer.drain(), TCP_FILE_SEND_TIMEOUT)
                 if to_read > 0:
-                    raise LogicError(
+                    raise InconsistentFileStateError(
                         f"Expected {content_length} bytes, got {content_length - to_read}"
                     )
-            await writer.drain()
+        await writer.drain()

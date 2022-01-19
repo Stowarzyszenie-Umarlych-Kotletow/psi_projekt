@@ -1,8 +1,8 @@
 from typing import Tuple, Optional
-from file_transfer.enums import ProtoMethod, KnownHeader, ProtoStatusCode
-import re
 
-from common.exceptions import ParseError
+import re
+from simple_p2p.file_transfer.enums import ProtoMethod, KnownHeader, ProtoStatusCode
+from simple_p2p.common.exceptions import ParseError
 
 
 def rstrip_once(str: str) -> str:
@@ -19,6 +19,9 @@ def rstrip_once(str: str) -> str:
 
 
 def process_line(value: bytes, encoding: str, error_msg: str) -> str:
+    """
+    Decodes a line of text and strips whitespace characters
+    """
     if not value:
         raise ParseError(error_msg)
     value = rstrip_once(value.decode(encoding))
@@ -26,6 +29,9 @@ def process_line(value: bytes, encoding: str, error_msg: str) -> str:
 
 
 def parse_header(line: str) -> Tuple[str, str]:
+    """
+    Parses the protocol header, separated by `: `
+    """
     split = line.split(": ", 1)
     if len(split) != 2:
         raise ParseError("Missing header separator")
@@ -34,6 +40,10 @@ def parse_header(line: str) -> Tuple[str, str]:
 
 
 def parse_range_header(value: str) -> Tuple[str, Optional[int], Optional[int]]:
+    """
+    Parses the range header of form
+    `<unit:str> <start:int>-<end:int>`
+    """
     pattern = r"(\S+) (\d*)-(\d*)"
     match = re.match(pattern, value)
     if not match:
@@ -58,6 +68,10 @@ def parse_content_range_header(value: str) -> Tuple[str, int, int, int]:
 
 
 def parse_kv_header(value: str) -> dict[str, Optional[str]]:
+    """
+    Parses a key-value header of form
+    `key=value`
+    """
     pattern = r"(\S+)=(\S*)"
     matches = re.finditer(pattern, value)
     result = {match[1]: match[2] for match in matches}

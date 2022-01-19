@@ -3,7 +3,7 @@ import hashlib
 import re
 
 from netifaces import interfaces, ifaddresses, AF_INET
-from common.config import *
+from simple_p2p.common.config import *
 
 def sha256sum(data):
     if type(data) == str:

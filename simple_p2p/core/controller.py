@@ -6,21 +6,22 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional, Tuple, Dict
 
-from common.config import Config, MAX_FILENAME_LENGTH
-from common.models import AbstractController, FileMetadata, FileStatus
-from file_transfer.client import ClientHandler
-from file_transfer.context import FileConsumerContext, FileProviderContext
-from common.exceptions import (
+from simple_p2p.common.config import Config, MAX_FILENAME_LENGTH
+from simple_p2p.common.models import AbstractController, FileMetadata, FileStatus
+from simple_p2p.file_transfer.client import ClientHandler
+from simple_p2p.file_transfer.context import FileConsumerContext, FileProviderContext
+from simple_p2p.common.exceptions import (
     FileDuplicateException,
     LogicError,
     FileNameTooLongException,
 )
-from common.tasks import coro_in_background, new_loop, in_background
-from file_transfer.server import ServerHandler
-from repository.repository import NotFoundError, Repository
-from udp.found_response import FoundResponse
-from udp.peer import Peer
-from udp.udp_controller import UdpController
+from simple_p2p.common.tasks import coro_in_background, new_loop, in_background
+from simple_p2p.file_transfer.exceptions import InconsistentFileStateError
+from simple_p2p.file_transfer.server import ServerHandler
+from simple_p2p.repository.repository import NotFoundError, Repository
+from simple_p2p.udp.found_response import FoundResponse
+from simple_p2p.udp.peer import Peer
+from simple_p2p.udp.udp_controller import UdpController
 
 
 class FileStateContext:
@@ -138,14 +139,15 @@ class Controller(AbstractController):
                 await handler.handle_connection(*streams)
 
                 await self._loop.run_in_executor(
-                    None, self._repo.update_stat, file.name
+                    self._executor, self._repo.update_stat, file.name
                 )
 
                 self._logger.info("Download of %s completed", file.name)
                 if not file.is_valid:
                     raise LogicError("Invalid file download")
+
                 await self._loop.run_in_executor(
-                    None, self._repo.change_state, file.name, "READY"
+                    self._executor, self._repo.change_state, file.name, "READY"
                 )
         except Exception as exc:
             self._logger.warning("Download of %s failed", file.name, exc_info=exc)
@@ -196,9 +198,12 @@ class Controller(AbstractController):
     ):
         meta = self._repo.init_meta(name, digest, size)
         self._add_file(meta)
-        in_background(
-            asyncio.run_coroutine_threadsafe(
-                self._download_from(meta, endpoint), self._loop
+        coro_in_background(self._download_from(meta, endpoint), self._loop)
+
+    def invalidate_file(self, name: str) -> Future:
+        return in_background(
+            self._loop.run_in_executor(
+                self._executor, self._repo.change_state, name, "INVALID"
             )
         )
 
@@ -217,14 +222,6 @@ class Controller(AbstractController):
             self._udp_controller.stop()
             self._logger.debug("Stopping Controller loop...")
             self._loop.stop()
-
-    @property
-    def known_peers(self):
-        return self._udp_controller.known_peers
-
-    @property
-    def known_peers_list(self):
-        return self._udp_controller.known_peers_list
 
     def get_peer_by_ip(self, ip) -> Peer:
         return self._udp_controller.get_peer_by_ip(ip)
@@ -250,8 +247,12 @@ class Controller(AbstractController):
     def add_consumer(self, context):
         return self._get_file_state(context.file.name).add_consumer(context)
 
-    def remove_consumer(self, context):
-        return self._get_file_state(context.file.name).remove_consumer(context)
+    def remove_consumer(self, context, exc_type, exc_value):
+        state = self._get_file_state(context.file.name)
+        if exc_value and (exc_type in [InconsistentFileStateError, FileNotFoundError]):
+            # Handle the case when the file state is corrupted
+            self.invalidate_file(state.file_meta.name)
+        return state.remove_consumer(context)
 
     def add_provider(self, context):
         self._get_file_state(context.file.name).provider = context
@@ -261,7 +262,7 @@ class Controller(AbstractController):
             context.file.name
         ).file_meta.current_size = bytes_downloaded
 
-    def remove_provider(self, context, exc_value: Optional[Exception] = None):
+    def remove_provider(self, context, exc_type=None, exc_value=None):
         state = self._get_file_state(context.file.name)
         state.provider = None
 
@@ -280,3 +281,15 @@ class Controller(AbstractController):
     @property
     def state(self):
         return self._state
+
+    @property
+    def known_peers(self):
+        return self._udp_controller.known_peers
+
+    @property
+    def known_peers_list(self):
+        return self._udp_controller.known_peers_list
+
+    @property
+    def repository_path(self):
+        return self._repo.path

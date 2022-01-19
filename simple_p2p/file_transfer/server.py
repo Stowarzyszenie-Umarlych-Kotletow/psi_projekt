@@ -1,24 +1,32 @@
+from asyncio import CancelledError
 from cmath import log
 import logging
 from uuid import UUID, uuid4
-from common.config import DIGEST_ALG
 from asyncio.streams import StreamReader, StreamWriter
 from typing import *
-from common.models import AbstractController, FileMetadata
-from file_transfer.enums import ProtoMethod, ProtoStatusCode
-from file_transfer.exceptions import InvalidRangeError
-from common.exceptions import ParseError, UnsupportedError
-from file_transfer.models import (
+from xmlrpc.client import Transport
+import socket
+
+from simple_p2p.common.config import DIGEST_ALG
+from simple_p2p.common.models import AbstractController, FileMetadata
+from simple_p2p.file_transfer.enums import ProtoMethod, ProtoStatusCode
+from simple_p2p.file_transfer.exceptions import InvalidRangeError
+from simple_p2p.common.exceptions import ParseError, UnsupportedError
+from simple_p2p.file_transfer.models import (
     ByteRange,
     DigestContainer,
     FileResponse,
     Request,
     Response,
 )
-from file_transfer.context import FileConsumerContext
+from simple_p2p.file_transfer.context import FileConsumerContext
 
 
 class ServerHandler:
+    """
+    Serves a single request
+    """
+
     def __init__(self, controller: AbstractController) -> None:
         self._controller = controller
         self._id = uuid4()
@@ -30,6 +38,9 @@ class ServerHandler:
         return FileConsumerContext(self._controller, file, endpoint)
 
     async def handle_request(self, request: Request, endpoint: Tuple[str, int]):
+        """
+        Main function that handles the request; it should return a `Response`
+        """
         range: ByteRange = None
         digest: str = None
         range_raw = request.headers.range
@@ -39,7 +50,7 @@ class ServerHandler:
                 raise UnsupportedError(f"Unsupported range unit: '{unit}'")
             range = ByteRange.from_interval(start, end)
 
-        file = self._controller.get_file(request.urn)
+        file = self._controller.get_file(request.uri)
 
         if_digest = request.headers.if_digest
         if if_digest:
@@ -53,8 +64,12 @@ class ServerHandler:
         return FileResponse(provider, range)
 
     async def handle_client(self, reader: StreamReader, writer: StreamWriter):
+        """
+        Entry-point that handles the connection and all related errors
+        """
+
         (ip, port) = writer.get_extra_info("peername")
-        log_extra = dict(id=self._id, method="", urn="")
+        log_extra = dict(id=self._id, method="", uri="")
         self._logger.debug("New connection from %s:%s", ip, port, extra=log_extra)
 
         async def error_response(code: ProtoStatusCode, exc: Exception, **kwargs):
@@ -81,7 +96,7 @@ class ServerHandler:
             except Exception as e:
                 return await error_response(ProtoStatusCode.C500_SERVER_ERROR, e)
             log_extra["method"] = request.method.value
-            log_extra["urn"] = request.urn
+            log_extra["uri"] = request.uri
             try:
                 response = await self.handle_request(request, (ip, port))
             except UnsupportedError as e:
@@ -96,10 +111,12 @@ class ServerHandler:
             include_body = request.method == ProtoMethod.GET
             await write_response(response, include_body=include_body)
 
+        except (ConnectionError, TimeoutError, CancelledError) as exc:
+            self._logger.error("Connection error", exc_info=exc, extra=log_extra)
+
         except Exception as outerException:
             self._logger.error(
-                "Uncaught exception", exc_info=outerException, extra=log_extra
+                "Unhandled exception", exc_info=outerException, extra=log_extra
             )
         finally:
-            await writer.drain()
             writer.close()

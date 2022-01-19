@@ -1,4 +1,4 @@
-from udp.structs import FileDataStruct
+from simple_p2p.udp.structs import FileDataStruct
 
 
 class FoundResponse:  # todo maybe move this somewhere else

@@ -1,16 +1,17 @@
+from curses import meta
 from threading import Lock
 import os, yaml
 import hashlib
 import logging
 from pathlib import Path
 
-from common.config import MAX_FILENAME_LENGTH, YAML_EXTENSION, METADATA_FOLDER_NAME
-from common.exceptions import (
+from simple_p2p.common.config import MAX_FILENAME_LENGTH, YAML_EXTENSION, METADATA_FOLDER_NAME
+from simple_p2p.common.exceptions import (
     LogicError,
     FileDuplicateException,
     FileNameTooLongException,
 )
-from common.models import FileMetadata, FileStatus
+from simple_p2p.common.models import FileMetadata, FileStatus
 
 
 class LoadingRepositoryError(LogicError):
@@ -77,6 +78,10 @@ class Repository:
                     # the file is no longer valid
                     self.logger.warn("File %s is no longer valid.", metadata.name)
                     metadata.status = FileStatus.INVALID
+                elif metadata.status == FileStatus.INVALID and metadata.is_valid:
+                    # the file is now valid
+                    self.logger.info("File %s has been re-validated.", metadata.name)
+                    metadata.status = FileStatus.READY
                 
                 self.__persist_filedata(metadata)
 
@@ -146,6 +151,7 @@ class Repository:
                 file_data.status = FileStatus[new_status]
             self._files[filename] = file_data
             self.__persist_filedata(self._files[filename])
+        self.logger.info("File %s changed state to %s", filename, new_status)
 
     def update_stat(self, filename: str) -> FileMetadata:
         meta = self.find(filename)
@@ -221,3 +227,7 @@ class Repository:
     @property
     def _meta_path(self):
         return os.path.join(self._path, METADATA_FOLDER_NAME)
+    
+    @property
+    def path(self):
+        return self._path

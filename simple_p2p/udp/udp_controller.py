@@ -3,25 +3,24 @@ import copy
 import datetime
 import logging
 import threading
-import time
 from typing import Dict, List, Tuple
 
-from common.config import *
-from common.tasks import coro_in_background, new_loop
-from common.utils import get_ip4_broadcast, is_sha256
-from common.exceptions import LogicError
-from common.models import FileMetadata
-from udp.datagrams import (
+from simple_p2p.common.config import *
+from simple_p2p.common.tasks import coro_in_background, new_loop
+from simple_p2p.common.utils import get_ip4_broadcast, is_sha256
+from simple_p2p.common.exceptions import LogicError
+from simple_p2p.common.models import FileMetadata
+from simple_p2p.udp.datagrams import (
     HelloDatagram,
     HereDatagram,
     FindDatagram,
     FoundDatagram,
     NotFoundDatagram,
 )
-from udp.found_response import FoundResponse
-from udp.structs import FileDataStruct, HereStruct
-from udp.udp_socket import UdpSocket, BroadcastSocket
-from udp.peer import Peer
+from simple_p2p.udp.found_response import FoundResponse
+from simple_p2p.udp.structs import FileDataStruct, HereStruct
+from simple_p2p.udp.udp_socket import UdpSocket, BroadcastSocket
+from simple_p2p.udp.peer import Peer
 
 
 class InvalidSearchArgsException(Exception):
@@ -91,6 +90,90 @@ class UdpController:
     def get_peer_by_ip(self, ip) -> Peer:
         return self.known_peers.get(ip)
 
+    async def _search(
+        self, file_name: str = None, file_digest: str = None
+    ) -> Dict[str, List[FoundResponse]]:
+        if not file_name:
+            raise InvalidSearchArgsException("Filename cannot be empty")
+
+        if file_digest is None:
+            file_digest = ""
+
+        if file_digest != "" and not is_sha256(file_digest):
+            raise InvalidSearchArgsException("File is not sha256sum")
+
+        with self._search_lock:
+            if file_name in self._search_results:
+                self._logger.warning(
+                    "Search | Attempted to search a file for which a search is already in progress"
+                )
+                raise LogicError(
+                    f"There is another search for '{file_name}' in progress"
+                )
+            self._search_results[file_name] = dict()
+
+        peers_available = set(self.known_peers.keys())
+
+        def get_missing_peers():
+            peers_left = peers_available.copy()
+            with self._search_lock:
+                for provider_ip in self._search_results[file_name].keys():
+                    if provider_ip in peers_left:
+                        peers_left.remove(provider_ip)
+            return peers_left
+
+        find_struct = FileDataStruct(file_name, file_digest)
+        find_datagram = FindDatagram(find_struct)
+
+        missing_peers = set()
+
+        for retry in range(SEARCH_RETRIES + 1):
+            if len(missing_peers) != 0:
+                self._logger.info(
+                    "Search | %s peers did not respond, retrying search for file %s with optional digest %s (%s/%s)",
+                    len(missing_peers),
+                    file_name,
+                    file_digest,
+                    retry,
+                    SEARCH_RETRIES,
+                )
+            try:
+                self._broadcast_socket.send(find_datagram.to_bytes())
+            except Exception as exc:
+                self._logger.error(f"Search | Error while broadcasting", exc_info=exc)
+
+            # find and found callbacks are now working
+            await asyncio.sleep(FINDING_TIME)
+
+            # check if all known peers responded and retry if not
+            missing_peers = get_missing_peers()
+
+            if len(missing_peers) == 0:
+                break
+
+        # delete peers that did not respond
+        for peer_ip in missing_peers:
+            self._logger.info("Search | Deleting unresponsive peer %s", peer_ip)
+            self.remove_peer(peer_ip)
+
+        # clear the dict indicating that the search is over
+        with self._search_lock:
+            responses: Dict[str, FoundResponse] = self._search_results.pop(file_name)
+
+        results_dict = dict()
+        for response in responses.values():
+            if response.is_found:
+                results_dict.setdefault(response.digest, []).append(response)
+
+        self._logger.info(
+            "Search | Found %s in %d out of %d peers",
+            file_name,
+            sum(len(_list) for _list in results_dict.values()),
+            len(peers_available),
+        )
+        return results_dict
+
+
     async def search(
         self, file_name: str = None, file_digest: str = None
     ) -> Dict[str, List[FoundResponse]]:
@@ -138,7 +221,10 @@ class UdpController:
                     retry,
                     SEARCH_RETRIES,
                 )
-            self._broadcast_socket.send(find_datagram.to_bytes())
+            try:
+                self._broadcast_socket.send(find_datagram.to_bytes())
+            except Exception as exc:
+                self._logger.error(f"Search | Error while broadcasting", exc_info=exc)
 
             # find and found callbacks are now working
             await asyncio.sleep(FINDING_TIME)
@@ -223,6 +309,8 @@ class UdpController:
 
         try:
             file: FileMetadata = self._controller.get_file(find_struct.file_name)
+            if not file.can_share:
+                raise LogicError("File is not shareable")
             target_digest: str = find_struct.file_digest
             if target_digest and file.digest != target_digest:
                 self._logger.warning(
@@ -334,10 +422,13 @@ class UdpController:
         """
         here_bytes = HereDatagram().to_bytes()
         while True:
-            self._logger.debug("Broadcasting HERE message")
-            self._broadcast_socket.send(here_bytes)
+            self._logger.debug("AliveAgent | Broadcasting HERE message")
+            try:
+                self._broadcast_socket.send(here_bytes)
+            except Exception as exc:
+                self._logger.error("AliveAgent | Error while broadcasting HERE", exc_info=exc)
             self._delete_old_peers()
-            await asyncio.sleep(10)
+            await asyncio.sleep(UDP_ADVERTISE_PERIOD)
 
     def _delete_old_peers(self):
         """
@@ -348,6 +439,6 @@ class UdpController:
             peers = self._known_peers
             for peer_ip in list(peers.keys()):
                 diff = now - peers[peer_ip].last_updated
-                if diff.total_seconds() > 30:
+                if diff.total_seconds() > UDP_PEER_CLEANUP_PERIOD:
                     self._logger.info("Removing peer %s because of inactivity", peer_ip)
                     peers.pop(peer_ip)  # delete peer from the list

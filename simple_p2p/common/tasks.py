@@ -7,6 +7,10 @@ tasks_lock = threading.Lock()
 tasks = []
 
 def in_background(future: asyncio.Future):
+    """
+    Keeps a reference to the specified future, 
+    just so it doesn't get garbage-collected
+    """
     def task_finished(own_future):
         with tasks_lock:
             tasks.remove(own_future)

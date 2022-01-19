@@ -1,8 +1,9 @@
 # STRUCTS
 from abc import abstractmethod
+from typing import Optional
 
-from common.config import *
-from udp.structs import (
+from simple_p2p.common.config import *
+from simple_p2p.udp.structs import (
     MessageType,
     HereStruct,
     HelloStruct,

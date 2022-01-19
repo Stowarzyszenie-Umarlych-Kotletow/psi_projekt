@@ -4,12 +4,12 @@ from cmd import Cmd
 
 from prettytable import PrettyTable
 
-from common.config import FINGERPRINT_LENGTH
-from common.exceptions import FileDuplicateException, FileNameTooLongException
-from common.models import FileStatus
-from repository.repository import NotFoundError
-from shell.controller import FileStateContext, Controller
-from udp.found_response import FoundResponse
+from simple_p2p.common.config import FINGERPRINT_LENGTH
+from simple_p2p.common.exceptions import FileDuplicateException, FileNameTooLongException
+from simple_p2p.common.models import FileStatus
+from simple_p2p.repository.repository import NotFoundError
+from simple_p2p.core.controller import FileStateContext, Controller
+from simple_p2p.udp.found_response import FoundResponse
 
 
 class SimpleShell(Cmd):
@@ -84,14 +84,16 @@ class SimpleShell(Cmd):
 
         print(status_table)
 
-    def _do_search(self, inp):
+    def _do_search(self, inp, check_duplicate=False):
         try:
             self._controller.get_file(inp)
-            print("File already exists in your local repository")
-            return
+            if check_duplicate:
+                print("File already exists in your local repository")
+                return
         except NotFoundError:
+            # that is expected
             pass
-        except FileNameTooLongException as err:
+        except Exception as err:
             print("Error searching file:", err)
             return
         print("Searching... please wait")
@@ -100,12 +102,13 @@ class SimpleShell(Cmd):
             print("No files were found in the network")
             return
         search_table = PrettyTable()
-        search_table.field_names = ["ID", "Name", "Fingerprint", "From"]
+        search_table.field_names = ["ID", "Name", "Fingerprint", "Size", "From"]
 
         for (index, (digest, providers)) in enumerate(responses.items()):
             name = providers[0].name
+            size = providers[0].file_size
             search_table.add_row(
-                [index, name, digest[:FINGERPRINT_LENGTH], f"{len(providers)} peers"]
+                [index, name, digest[:FINGERPRINT_LENGTH], size, f"{len(providers)} peers"]
             )
 
         print("Files found in the network:")
@@ -118,7 +121,7 @@ class SimpleShell(Cmd):
 
     def do_download(self, inp):
         """download <file_name>: download file with given name from the network"""
-        responses = self._do_search(inp)
+        responses = self._do_search(inp, True)
         if responses is None:
             return
         # handle multiple versions

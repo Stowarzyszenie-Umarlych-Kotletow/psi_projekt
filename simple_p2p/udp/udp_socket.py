@@ -7,9 +7,9 @@ import sys
 from asyncio import AbstractEventLoop, Future
 from typing import Tuple, Callable
 
-from common.config import *
-from common.tasks import new_loop
-from common.utils import all_ip4_addresses
+from simple_p2p.common.config import *
+from simple_p2p.common.tasks import new_loop
+from simple_p2p.common.utils import all_ip4_addresses
 
 
 class AsyncioDatagramProtocol(asyncio.DatagramProtocol):
@@ -131,4 +131,3 @@ class BroadcastSocket(UdpSocket):
     def _init_socket(self):
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        self._socket.setsockopt(socket.SOL_SOCKET, socket.IP_MULTICAST_LOOP, 0)
