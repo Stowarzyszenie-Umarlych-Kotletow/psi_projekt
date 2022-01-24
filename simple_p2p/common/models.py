@@ -51,7 +51,7 @@ class FileMetadata:
 class AbstractController(ABC):
     def get_file(self, name) -> FileMetadata:
         pass
-
+    
     def add_consumer(self, context):
         pass
 

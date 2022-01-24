@@ -85,7 +85,7 @@ def parse_request_line(line: str) -> Tuple[ProtoMethod, str]:
     (method, url) = split
     if not ProtoMethod.is_valid(method):
         raise ParseError("Unknown method")
-    return (ProtoMethod[method], url)
+    return (ProtoMethod.get(method), url)
 
 
 def parse_response_line(line: str) -> Tuple[str, str]:

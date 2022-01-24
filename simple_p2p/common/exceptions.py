@@ -28,3 +28,6 @@ class ParseError(LogicError):
 
 class FileNameTooLongException(LogicError):
     pass
+
+class NotFoundError(LogicError):
+    pass

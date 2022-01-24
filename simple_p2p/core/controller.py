@@ -14,11 +14,12 @@ from simple_p2p.common.exceptions import (
     FileDuplicateException,
     LogicError,
     FileNameTooLongException,
+    NotFoundError
 )
 from simple_p2p.common.tasks import coro_in_background, new_loop, in_background
 from simple_p2p.file_transfer.exceptions import InconsistentFileStateError
 from simple_p2p.file_transfer.server import ServerHandler
-from simple_p2p.repository.repository import NotFoundError, Repository
+from simple_p2p.repository.repository import Repository
 from simple_p2p.udp.found_response import FoundResponse
 from simple_p2p.udp.peer import Peer
 from simple_p2p.udp.udp_controller import UdpController

@@ -11,7 +11,7 @@ from simple_p2p.common.config import DIGEST_ALG
 from simple_p2p.common.models import AbstractController, FileMetadata
 from simple_p2p.file_transfer.enums import ProtoMethod, ProtoStatusCode
 from simple_p2p.file_transfer.exceptions import InvalidRangeError
-from simple_p2p.common.exceptions import ParseError, UnsupportedError
+from simple_p2p.common.exceptions import FileNameTooLongException, ParseError, UnsupportedError, NotFoundError
 from simple_p2p.file_transfer.models import (
     ByteRange,
     DigestContainer,
@@ -50,7 +50,10 @@ class ServerHandler:
                 raise UnsupportedError(f"Unsupported range unit: '{unit}'")
             range = ByteRange.from_interval(start, end)
 
-        file = self._controller.get_file(request.uri)
+        try:
+            file = self._controller.get_file(request.uri)
+        except FileNameTooLongException:
+            return Response(ProtoStatusCode.C400_BAD_REQUEST)
 
         if_digest = request.headers.if_digest
         if if_digest:
@@ -103,7 +106,7 @@ class ServerHandler:
                 return await error_response(ProtoStatusCode.C400_BAD_REQUEST, e)
             except InvalidRangeError as e:
                 return await error_response(ProtoStatusCode.C416_INVALID_RANGE, e)
-            except FileNotFoundError as e:
+            except (FileNotFoundError, NotFoundError) as e:
                 return await error_response(ProtoStatusCode.C404_NOT_FOUND, e)
             except Exception as e:
                 return await error_response(ProtoStatusCode.C500_SERVER_ERROR, e)

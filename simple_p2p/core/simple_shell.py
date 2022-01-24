@@ -5,9 +5,8 @@ from cmd import Cmd
 from prettytable import PrettyTable
 
 from simple_p2p.common.config import FINGERPRINT_LENGTH
-from simple_p2p.common.exceptions import FileDuplicateException, FileNameTooLongException
+from simple_p2p.common.exceptions import FileDuplicateException, NotFoundError
 from simple_p2p.common.models import FileStatus
-from simple_p2p.repository.repository import NotFoundError
 from simple_p2p.core.controller import FileStateContext, Controller
 from simple_p2p.udp.found_response import FoundResponse
 

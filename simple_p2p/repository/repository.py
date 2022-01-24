@@ -10,6 +10,7 @@ from simple_p2p.common.exceptions import (
     LogicError,
     FileDuplicateException,
     FileNameTooLongException,
+    NotFoundError
 )
 from simple_p2p.common.models import FileMetadata, FileStatus
 
@@ -23,10 +24,6 @@ class HashingError(LogicError):
 
 
 class RepositoryModificationError(LogicError):
-    pass
-
-
-class NotFoundError(LogicError):
     pass
 
 
