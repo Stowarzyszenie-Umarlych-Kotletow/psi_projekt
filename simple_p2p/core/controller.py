@@ -6,7 +6,7 @@ import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import List, Optional, Tuple, Dict
 
-from simple_p2p.common.config import Config, MAX_FILENAME_LENGTH
+from simple_p2p.common.config import FILE_WATCHER_PERIOD, Config, MAX_FILENAME_LENGTH
 from simple_p2p.common.models import AbstractController, FileMetadata, FileStatus
 from simple_p2p.file_transfer.client import ClientHandler
 from simple_p2p.file_transfer.context import FileConsumerContext, FileProviderContext
@@ -83,7 +83,8 @@ class Controller(AbstractController):
     def start(self):
         cfg = Config()
         self._logger.info("Starting...")
-
+        # create a new asyncio loop
+        # to be used in the file monitor and TCP server
         self._loop = new_loop()
         try:
             self._repo.load()
@@ -96,6 +97,7 @@ class Controller(AbstractController):
         except Exception as exc:
             raise LogicError(f"Failed to start the UDP controller: {exc}")
         try:
+            # run the coroutine while catching the exceptions
             self._tcp_server: asyncio.AbstractServer = run_coroutine_threadsafe(
                 start_server(self._handle_client, cfg.bind_ip, cfg.tcp_port), self._loop
             ).result()
@@ -112,11 +114,19 @@ class Controller(AbstractController):
         self._logger.info("Ready")
 
     def _load_from_repo(self):
+        """
+        Internal function: loads files from repos
+        Does not perform locking.
+        """
         repo_files = self._repo.get_files()
         for meta in repo_files.values():
             self._add_file(meta)
 
     def _add_file(self, meta: FileMetadata):
+        """
+        Internal function: adds a file metadata to current state
+        Performs locking.
+        """
         self._logger.debug("Adding file %s", meta.name)
         with self._lock:
             if meta.name in self._state:
@@ -124,11 +134,24 @@ class Controller(AbstractController):
                 raise FileDuplicateException(f"File '{meta.name}' already exists")
             self._state[meta.name] = FileStateContext(meta)
 
+    def _get_file_state(self, name: str) -> FileStateContext:
+        """
+        Internal function: returns file state by name
+        Does not perform locking.
+        """
+        try:
+            return self._state[name]
+        except KeyError:
+            raise NotFoundError(f"File '{name}' not found in repository")
+
     async def _handle_client(self, reader, writer):
         handler = ServerHandler(self)
         await handler.handle_client(reader, writer)
 
     async def _download_from(self, file: FileMetadata, endpoint: Tuple[str, int]):
+        """
+        Internal function: Handles a scheduled download
+        """
         try:
             self._logger.info(
                 "Starting download of file %s from %s", file.name, endpoint[0]
@@ -154,11 +177,17 @@ class Controller(AbstractController):
             self._udp_controller.remove_peer(endpoint[0])
 
     async def _serve_tcp(self):
+        """
+        Internal function: runs the TCP server, forever
+        """
         server = self._tcp_server
         async with server:
             await server.serve_forever()
 
     async def _monitor_files(self):
+        """
+        Internal function: monitors and updates file states, forever
+        """
         def process_file(file: FileStateContext):
             meta = file.file_meta
             if meta.status == FileStatus.DOWNLOADING and not file.provider:
@@ -175,12 +204,15 @@ class Controller(AbstractController):
                 self._executor.submit(self._repo.change_state, meta.name, "INVALID")
 
         while True:
-            await asyncio.sleep(5)
+            await asyncio.sleep(FILE_WATCHER_PERIOD)
             with self._lock:
                 for file in self._state.values():
                     process_file(file)
 
     async def retry_download(self, name: str):
+        """
+        Attempts to retry download of file `name`
+        """
         self._logger.info("Retrying file %s", name)
         meta = self.get_file(name)
         search_res = await self._udp_controller.search(meta.name, meta.digest)
@@ -196,11 +228,18 @@ class Controller(AbstractController):
     def schedule_download(
         self, name: str, digest: Optional[str], size: int, endpoint: Tuple[str, int]
     ):
+        """
+        Schedule a file with given `name` and optionally `digest`
+        to be downloaded from `endpoint`. Runs in background.
+        """
         meta = self._repo.init_meta(name, digest, size)
         self._add_file(meta)
         coro_in_background(self._download_from(meta, endpoint), self._loop)
 
     def invalidate_file(self, name: str) -> Future:
+        """
+        Changes the state of file `name` to INVALID
+        """
         return in_background(
             self._loop.run_in_executor(
                 self._executor, self._repo.change_state, name, "INVALID"
@@ -227,15 +266,14 @@ class Controller(AbstractController):
         return self._udp_controller.get_peer_by_ip(ip)
 
     async def search_file(
-        self, file_name: str = None, file_hash: str = None
+        self, name: str = None, digest: str = None
     ) -> Dict[str, List[FoundResponse]]:
-        return await self._udp_controller.search(file_name, file_hash)
+        """
+        Searches for a file `name` with optional `digest`.
+        This is a coroutine, it might take a few seconds to run.
+        """
+        return await self._udp_controller.search(name, digest)
 
-    def _get_file_state(self, name: str) -> FileStateContext:
-        try:
-            return self._state[name]
-        except KeyError:
-            raise NotFoundError(f"File '{name}' not found in repository")
 
     def get_file(self, name) -> FileMetadata:
         if len(name) > MAX_FILENAME_LENGTH:
@@ -267,11 +305,19 @@ class Controller(AbstractController):
         state.provider = None
 
     def add_file(self, path):
+        """
+        Adds external file from `path` into the repository
+        This method locks implicitly
+        """
         meta = self._repo.add_file(path)
         self._add_file(meta)
         return meta
 
     def remove_file(self, name):
+        """
+        Removes file `name` from the repository
+        This method locks explicitly
+        """
         with self._lock:
             state = self._get_file_state(name)
             self._repo.remove_file(name)

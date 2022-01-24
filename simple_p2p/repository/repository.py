@@ -205,8 +205,7 @@ class Repository:
         try:
             new_size = os.path.getsize(data.path)
             new_hash = self.__calculate_hash(data.path)
-        except OSError as e:
-            self.logger.debug("Could not find file %s", data.path, exc_info=e)
+        except OSError:
             new_size = 0
             new_hash = None
         data.current_digest = new_hash

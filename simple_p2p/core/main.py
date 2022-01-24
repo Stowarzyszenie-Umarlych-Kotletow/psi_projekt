@@ -1,7 +1,7 @@
 import argparse
 import logging.config
 from pathlib import Path
-
+import sys
 import yaml
 from simple_p2p.common.config import Config
 
@@ -31,16 +31,17 @@ def parse_cmdline():
     args_dict = {k: v for (k, v) in args._get_kwargs()}
     cfg.update(args_dict)
 
-import sys
+
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
         return
 
     logging.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
-sys.excepthook = handle_exception
+
 
 def run():
+    sys.excepthook = handle_exception
     parse_cmdline()
     configure_logging()
     controller = Controller()

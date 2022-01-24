@@ -8,50 +8,62 @@ handlers:
   request-console:
     class: logging.StreamHandler
     formatter: request
-    level: DEBUG
+    level: INFO
     stream: ext://sys.stderr
   console:
     class: logging.StreamHandler
     formatter: simple
-    level: DEBUG
+    level: INFO
     stream: ext://sys.stderr
-#  request-console:
-#    class: logging.StreamHandler
-#    formatter: request
-#    level: DEBUG
-#    stream: ext://sys.stderr
-#  console:
-#    class: logging.StreamHandler
-#    formatter: simple
-#    level: DEBUG
-#    stream: ext://sys.stderr
+  request-file:
+    class: logging.handlers.RotatingFileHandler
+    formatter: request
+    level: DEBUG
+    filename: simplep2p.log
+    maxBytes: 1_000_000
+  file:
+    class: logging.handlers.RotatingFileHandler
+    formatter: simple
+    level: DEBUG
+    filename: simplep2p.log
+    maxBytes: 1_000_000
 loggers:
   ClientHandler:
     handlers:
     - request-console
+    - request-file
     level: DEBUG
   ServerHandler:
     handlers:
     - request-console
+    - request-file
     level: DEBUG
   UdpController:
     handlers:
     - console
+    - file
     level: DEBUG
   Controller:
     handlers:
     - console
+    - file
     level: DEBUG
   Repository:
     handlers:
     - console
+    - file
     level: DEBUG
   AsyncioDatagramProtocol:
     handlers:
     - console
+    - file
     level: DEBUG
   UdpSocket:
     handlers:
     - console
+    - file
     level: DEBUG
+  root:
+    handlers:
+    - file
 version: 1
